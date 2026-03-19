@@ -1,6 +1,13 @@
 **/keys.txt
 **/tags.json
 **/prefixes.json
+*.json.bak
+
+# Sensitive files
+*.json
+
+# Models
+models/
 
 # Covers JetBrains IDEs: IntelliJ, RubyMine, PhpStorm, AppCode, PyCharm, CLion, Android Studio, WebStorm and Rider
 # Reference: https://intellij-support.jetbrains.com/hc/en-us/articles/206544839
@@ -78,5 +85,5 @@ fabric.properties
 
 # Other stuff
 *pyc
-picturebook.json
 emoji.png 
+__pycache__/

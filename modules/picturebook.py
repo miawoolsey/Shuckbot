@@ -16,7 +16,7 @@ async def read_image(message):
     args = message.clean_content.split(' ')
 
     async def search_previous():
-        m = await message.channel.history(limit=20).flatten()
+        m = [msg async for msg in message.channel.history(limit=20)]
         for i in range(20):
             if m[i].attachments:
                 if is_valid_filetype(m[i].attachments[0].url):
@@ -34,7 +34,7 @@ async def read_image(message):
     if len(args) >= 2:
         if args[1][0:4] == "http" and is_valid_filetype(args[1]):
             try:
-                requests.get(args[1])
+                requests.get(args[1], timeout=10)
             except requests.exceptions.ConnectionError:
                 await message.channel.send("Your image is invalid!")
                 return
@@ -42,7 +42,7 @@ async def read_image(message):
                 return args[1]
         else:
             if message.mentions:
-                return message.mentions[0].avatar_url
+                return message.mentions[0].avatar.url
             else:
                 temp = await search_previous()
                 if temp is None:

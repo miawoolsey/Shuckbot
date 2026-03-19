@@ -1,32 +1,34 @@
+import asyncio
+
 import discord
 
 shucks = [
-    'https://i.imgur.com/gacRkVx.png',
-    'https://i.imgur.com/gacRkVx.png',
-    'https://i.imgur.com/gacRkVx.png',
-    'https://i.imgur.com/MJRUgWk.png',
-    'https://i.imgur.com/UOdRaHR.png',
-    'https://i.imgur.com/31jOGPf.png',
-    'https://i.imgur.com/k7kTT2o.png',
-    'https://i.imgur.com/JvbBhc2.png',
-    'https://i.imgur.com/gWfuFB8.png',
-    'https://i.imgur.com/Dfz2xpo.png',
-    'https://i.imgur.com/EByj26t.png',
-    'https://i.imgur.com/tZxutE8.png',
-    'https://i.imgur.com/vkSksOv.png',
-    'https://i.imgur.com/G5KGuus.png',
-    'https://i.imgur.com/MtGmg3w.png',
-    'https://i.imgur.com/wnSibNm.png',
-    'https://i.imgur.com/cRDaS4i.png',
-    'https://i.imgur.com/mh1gqPV.png',
-    'https://i.imgur.com/0NgYWV7.png',
-    'https://i.imgur.com/CaIMs7Y.png',
-    'https://i.imgur.com/TQrwHx6.png',
-    'https://i.imgur.com/AX4Fsqr.png',
-    'https://i.imgur.com/inKNjPt.png',
-    'https://i.imgur.com/Yqpugd4.png',
-    'https://i.imgur.com/jJPTljI.png',
-    'https://i.imgur.com/N5Cu6Wx.png'
+    'https://rimgo.pussthecat.org/gacRkVx.png',
+    'https://rimgo.pussthecat.org/gacRkVx.png',
+    'https://rimgo.pussthecat.org/gacRkVx.png',
+    'https://rimgo.pussthecat.org/MJRUgWk.png',
+    'https://rimgo.pussthecat.org/UOdRaHR.png',
+    'https://rimgo.pussthecat.org/31jOGPf.png',
+    'https://rimgo.pussthecat.org/k7kTT2o.png',
+    'https://rimgo.pussthecat.org/JvbBhc2.png',
+    'https://rimgo.pussthecat.org/gWfuFB8.png',
+    'https://rimgo.pussthecat.org/Dfz2xpo.png',
+    'https://rimgo.pussthecat.org/EByj26t.png',
+    'https://rimgo.pussthecat.org/tZxutE8.png',
+    'https://rimgo.pussthecat.org/vkSksOv.png',
+    'https://rimgo.pussthecat.org/G5KGuus.png',
+    'https://rimgo.pussthecat.org/MtGmg3w.png',
+    'https://rimgo.pussthecat.org/wnSibNm.png',
+    'https://rimgo.pussthecat.org/cRDaS4i.png',
+    'https://rimgo.pussthecat.org/mh1gqPV.png',
+    'https://rimgo.pussthecat.org/0NgYWV7.png',
+    'https://rimgo.pussthecat.org/CaIMs7Y.png',
+    'https://rimgo.pussthecat.org/TQrwHx6.png',
+    'https://rimgo.pussthecat.org/AX4Fsqr.png',
+    'https://rimgo.pussthecat.org/inKNjPt.png',
+    'https://rimgo.pussthecat.org/Yqpugd4.png',
+    'https://rimgo.pussthecat.org/jJPTljI.png',
+    'https://rimgo.pussthecat.org/N5Cu6Wx.png'
 ]
 
 commands = [
@@ -114,7 +116,7 @@ commands = [
                  ';picturebook remove\n',
                  'Examples:',
                  ';pb\n'
-                 ';pb add https://i.imgur.com/0VIk7Cu.png\n'
+                 ';pb add https://rimgo.pussthecat.org/0VIk7Cu.png\n'
                  ';picturebook rm'
                  )
     },
@@ -604,22 +606,84 @@ commands = [
     },
 
     {
-        'prefix': ('game color', 'game colour', 'game col', 'game c'),
-        'command': 'game color/colour/col/c',
+        'prefix': ('game color', 'game colour', 'game col', 'game c', 'g color', 'g colour', 'g col', 'g c',),
+        'command': 'game color/colour/col/c <multiplayer/multi/m> <time in seconds to guess>',
         'info': 'Guess the color\'s hex code!',
         'page': 6,
-        'help': ('Try and gues the color\'s hex code! Your answer should be just 6 letters! ',
+        'help': ('Try and guess the color\'s hex code! Your answer should be just 6 hexadecimal numbers (ex. '
+                 'the colour code for this embed is f1c40f)! Can be played in '
+                 'singleplayer, or in multiplayer by adding multiplayer/multi/m to your command',
                  'Aliases:',
-                 'size',
+                 'color, colour, col, c',
                  'Usage:',
-                 ';size <image URL>\n'
-                 ';size <user mention>\n'
-                 ';size\n',
+                 ';game color\n',
                  'Examples:',
-                 ';size https://img.pokemondb.net/artwork/large/shuckle.jpg\n'
-                 ';size @Shuckbot#6675\n')
+                 ';g c\n'
+                 ';game col multi\n'
+                 ';g c m 45\n')
     },
 
+    {
+        'prefix': ('game flag', 'game f', 'g flag', 'g f'),
+        'command': 'game flag/f <difficulty> <multiplayer/multi/m> <multiplayer rounds>',
+        'info': 'Guess the flag!',
+        'page': 6,
+        'help': ('Try and guess the flag! The difficulties are:\neasy/e: easy country flags\nnormal/n: slightly harder country flags\n'
+                 'hard/h: more obscure country flags\n all/a: all available flags (including states, cities, and more!)\n'
+                 'japan/j: japanese prefectures\nAdding multiplayer/multi/m to your command will launch multiplayer'
+                 ' mode, where the first person to get the flag right gets a point, and first to <multiplayer rounds> wins!',
+                 'Aliases:',
+                 'flag, f',
+                 'Usage:',
+                 ';game flag <difficulty> <multiplayer/multi/m> <multiplayer rounds>\n',
+                 'Examples:',
+                 ';g f\n'
+                 ';game flag all\n'
+                 ';g f h m 10\n')
+    },
+
+    {
+        'prefix': ('game geo', 'game g', 'g geo', 'g g', 'game geography', 'g geography'),
+        'command': 'game geography/geo/g <region> <mode>',
+        'info': 'Geography related games!',
+        'page': 6,
+        'help': ('Geography related games!\nThe current regions are: Japan\nThe current modes are: Map',
+                 'Aliases:',
+                 'geography, geo, g',
+                 'Usage:',
+                 ';game geography/geo/g <region> <mode>\n',
+                 'Examples:',
+                 ';game geography japan map\n'
+                 ';game g j m\n')
+    },
+    {
+        'prefix': ('game stats', 'game s', 'g stats', 'g s'),
+        'command': 'game stats/s <game> <user mention>',
+        'info': 'Get a user\' game stats!',
+        'page': 6,
+        'help': ('States for a user\'s games, you can get more stats by entering the name of the game',
+                 'Aliases:',
+                 'stats, s',
+                 'Usage:',
+                 ';game stats/s <game> <user mention>\n',
+                 'Examples:',
+                 ';game stats flag\n'
+                 ';game s geo @Shuckbot#6675\n')
+    },
+    {
+        'prefix': ('game leaderboard', 'game l', 'g leaderboard', 'g l', 'game top', 'g top'),
+        'command': 'game leaderboard/l/top',
+        'info': 'Get the global leaderboard for games!',
+        'page': 6,
+        'help': ('Gets the global leaderboard for the games',
+                 'Aliases:',
+                 'leaderboard, l, top',
+                 'Usage:',
+                 ';game leaderboard/l/top\n',
+                 'Examples:',
+                 ';game leaderboard\n'
+                 ';g l\n')
+    },
     {
         'command': 'Page 1: ',
         'info': 'General Commands',
@@ -691,20 +755,23 @@ async def show_help(message):
             if page_num < 0:
                 page_num = 0
         else:  # The user likely entered in a command
-            command = str(message.content[6:])
-            is_invalid = True
-            for item in commands:
-                try:
-                    for prefix in item['prefix']:
-                        if prefix == command:
-                            page_num = -1
-                            is_invalid = False
-                            help_txt = item['help']
-                            gen_pfx = item['prefix'][0]
-                except KeyError:  # it got to the end without finding the command
-                    break
-            if is_invalid:
-                page_num = 0
+            if message.content[6:] in ['g', 'game']:
+                page_num = 6
+            else:
+                command = str(message.content[6:])
+                is_invalid = True
+                for item in commands:
+                    try:
+                        for prefix in item['prefix']:
+                            if prefix == command:
+                                page_num = -1
+                                is_invalid = False
+                                help_txt = item['help']
+                                gen_pfx = item['prefix'][0]
+                    except KeyError:  # it got to the end without finding the command
+                        break
+                if is_invalid:
+                    page_num = 0
 
     embed = discord.Embed()
     embed.colour = discord.Color.gold()

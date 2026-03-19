@@ -26,23 +26,22 @@ async def read_image(message):
     args = message.clean_content.split(' ')
 
     async def search_previous():
-        m = await message.channel.history(limit=20).flatten()
-        for i in range(20):
-            if m[i].attachments and is_valid_filetype(m[i].attachments[0].url):
-                readURL = m[i].attachments[0].url
-                response = requests.get(readURL)
+        async for m in message.channel.history(limit=20):
+            if m.attachments and is_valid_filetype(m.attachments[0].url):
+                readURL = m.attachments[0].url
+                response = requests.get(readURL, timeout=10)
                 image = Image.open(BytesIO(response.content))
                 return image
-            if m[i].embeds and m[i].embeds[0].image and is_valid_filetype(m[i].embeds[0].image.url):
-                readURL = m[i].embeds[0].image.url
-                response = requests.get(readURL)
+            if m.embeds and m.embeds[0].image and is_valid_filetype(m.embeds[0].image.url):
+                readURL = m.embeds[0].image.url
+                response = requests.get(readURL, timeout=10)
                 image = Image.open(BytesIO(response.content))
                 return image
-            words = m[i].clean_content.split(' ')
+            words = m.clean_content.split(' ')
             for word in words:
                 if is_valid_filetype(word) and word[0:4] == "http":
                     try:
-                        response = requests.get(word)
+                        response = requests.get(word, timeout=10)
                         image = Image.open(BytesIO(response.content))
                         return image
                     except OSError:
@@ -52,7 +51,7 @@ async def read_image(message):
     if len(args) >= 2:
         if args[1][0:4] == "http" and is_valid_filetype(args[1]):
             try:
-                response = requests.get(args[1])
+                response = requests.get(args[1], timeout=10)
             except requests.exceptions.ConnectionError:
                 await message.channel.send("Your image is invalid!")
                 return
@@ -61,8 +60,8 @@ async def read_image(message):
                 return image
         else:
             if message.mentions:
-                readURL = message.mentions[0].avatar_url
-                response = requests.get(readURL)
+                readURL = message.mentions[0].display_avatar.url
+                response = requests.get(readURL, timeout=10)
                 image = Image.open(BytesIO(response.content))
                 return image
             else:
@@ -76,7 +75,7 @@ async def read_image(message):
         if message.attachments:
             if is_valid_filetype(message.attachments[0].url):
                 readURL = message.attachments[0].url
-                response = requests.get(readURL)
+                response = requests.get(readURL, timeout=10)
                 image = Image.open(BytesIO(response.content))
                 return image
             else:
@@ -158,9 +157,9 @@ def rectangle_image_crop(input_img, size):
 
 async def holding_imagemaker(message):
     sent = await message.channel.send("Processing .")
-    # holding_input_image = "https://i.imgur.com/uYkGfzu.png"
-    holding_base_image = "https://i.imgur.com/0mr6e6p.jpg"
-    holding_mask = "https://i.imgur.com/DimDfNH.png"
+    # holding_input_image = "https://rimgo.pussthecat.org/uYkGfzu.png"
+    holding_base_image = "https://rimgo.pussthecat.org/0mr6e6p.jpg"
+    holding_mask = "https://rimgo.pussthecat.org/DimDfNH.png"
 
     inner = await read_image(message)
     if inner is None:
@@ -170,10 +169,10 @@ async def holding_imagemaker(message):
     await sent.edit(content="Processing ..")
 
     inner = inner.convert("RGBA")
-    response = requests.get(holding_base_image)
+    response = requests.get(holding_base_image, timeout=10)
     im = Image.open(BytesIO(response.content))
 
-    response = requests.get(holding_mask)
+    response = requests.get(holding_mask, timeout=10)
     im_mask = Image.open(BytesIO(response.content))
 
     # ratio of width/height, but multiplied by 1000 and floored
@@ -217,9 +216,9 @@ async def holding_imagemaker(message):
 async def exmilitary_imagemaker(message):
     sent = await message.channel.send("Processing .")
 
-    exmilitary_base_image = "https://cdn.discordapp.com/attachments/701021701529403483/706055954361352202/unknown.png"
-    exmilitary_mask_image = "https://i.imgur.com/crHKd8m.png"
-    exmilitary_texture = "https://i.imgur.com/dDF8G3z.png"
+    exmilitary_base_image = "https://images.genius.com/6cb70d371c813611099de5c517fc60f7.1000x1000x1.png"
+    exmilitary_mask_image = "https://rimgo.pussthecat.org/crHKd8m.png"
+    exmilitary_texture = "https://rimgo.pussthecat.org/dDF8G3z.png"
 
     IM_SIZE = 500  # pixel size of output, same for height and width
 
@@ -231,13 +230,18 @@ async def exmilitary_imagemaker(message):
 
     await sent.edit(content="Processing ..")
 
-    response = requests.get(exmilitary_base_image)
-    im = Image.open(BytesIO(response.content))
-    response = requests.get(exmilitary_mask_image)
+    response = requests.get(exmilitary_base_image, timeout=10)
+    try:
+        im = Image.open(BytesIO(response.content))
+    except Exception as e:
+        print(e)
+        return
+    response = requests.get(exmilitary_mask_image, timeout=10)
     im_mask = Image.open(BytesIO(response.content))
-    response = requests.get(exmilitary_texture)
+    response = requests.get(exmilitary_texture, timeout=10)
     texture = Image.open(BytesIO(response.content))
 
+    print("Images loaded")
     im = im.resize((IM_SIZE, IM_SIZE), Image.BILINEAR)
     im_mask = im_mask.resize((IM_SIZE, IM_SIZE), Image.BILINEAR)
     inside_img = inner.copy().convert("RGBA")
@@ -248,8 +252,10 @@ async def exmilitary_imagemaker(message):
     inside_img = inside_img.crop(((inside_img.size[0] - IM_SIZE) / 2, (inside_img.size[1] - IM_SIZE) / 2,
                                   (inside_img.size[0] + IM_SIZE) / 2, (inside_img.size[1] + IM_SIZE) / 2))
 
+    print("Input image processed")
     texture = texture.resize((IM_SIZE, IM_SIZE)).convert("RGBA")
 
+    print("Applying texture...")
     masko = Image.new("L", (IM_SIZE, IM_SIZE), 110)
     inside_img.paste(texture, mask=masko)
 
@@ -272,17 +278,17 @@ async def exmilitary_imagemaker(message):
 
 async def fantano_imagemaker(message):
     sent = await message.channel.send("Processing .")
-    image_group = [("https://i.imgur.com/iitXl6v.png", "https://i.imgur.com/2uil9xz.png", (49, 28), 500, -20, 30, -30),
-                   ("https://i.imgur.com/EQSNZS4.png", "https://i.imgur.com/z2RfZkp.png", (22, 20), 475, -20, 5, -5),
-                   ("https://i.imgur.com/IlyaYTT.png", "https://i.imgur.com/gHWQJiu.png", (26, 24), 495, -30, 20,
+    image_group = [("https://rimgo.pussthecat.org/iitXl6v.png", "https://rimgo.pussthecat.org/2uil9xz.png", (49, 28), 500, -20, 30, -30),
+                   ("https://rimgo.pussthecat.org/EQSNZS4.png", "https://rimgo.pussthecat.org/z2RfZkp.png", (22, 20), 475, -20, 5, -5),
+                   ("https://rimgo.pussthecat.org/IlyaYTT.png", "https://rimgo.pussthecat.org/gHWQJiu.png", (26, 24), 495, -30, 20,
                     -25)]  # (base image, cutout image)
 
     number = message.id % 3
 
-    response = requests.get(image_group[number][0])
+    response = requests.get(image_group[number][0], timeout=10)
     img = Image.open(BytesIO(response.content))
 
-    response = requests.get(image_group[number][1])
+    response = requests.get(image_group[number][1], timeout=10)
     cutout = Image.open(BytesIO(response.content))
 
     await sent.edit(content="Processing ..")
@@ -335,8 +341,8 @@ async def one_imagemaker(message):
 
 
 async def kim_imagemaker(message):
-    kim_base_url = "https://i.imgur.com/5UIezWU.png"
-    kim_cutout_url = "https://i.imgur.com/1JlEG9R.png"
+    kim_base_url = "https://rimgo.pussthecat.org/5UIezWU.png"
+    kim_cutout_url = "https://rimgo.pussthecat.org/1JlEG9R.png"
 
     sent = await message.channel.send("Processing .")
     input_img = await read_image(message)
@@ -346,10 +352,10 @@ async def kim_imagemaker(message):
 
     await sent.edit(content="Processing ..")
 
-    response = requests.get(kim_base_url)
+    response = requests.get(kim_base_url, timeout=10)
     img = Image.open(BytesIO(response.content))
 
-    response = requests.get(kim_cutout_url)
+    response = requests.get(kim_cutout_url, timeout=10)
     cutout = Image.open(BytesIO(response.content))
 
     size = 260, 155
@@ -387,7 +393,7 @@ async def get_emoji(message, client):
     if message2[1][-1:] == '>':
         url = "https://cdn.discordapp.com/emojis/" + str(message2[1][-19:-1]) + ".gif"
         try:
-            response = requests.get(url)
+            response = requests.get(url, timeout=10)
             img = Image.open(BytesIO(response.content))
             if (len(message2) > 2):
                 try:
@@ -399,12 +405,12 @@ async def get_emoji(message, client):
                 except ValueError:
                     await message.channel.send("Invalid scale!")
                 else:
-                    img = img.resize((img.width * size, img.height * size), Image.BICUBIC)
+                    img = img.resize((int(img.width * size), int(img.height * size)), Image.BICUBIC)
             img.save("emoji.gif")
             await message.channel.send(file=discord.File("emoji.gif"))
         except OSError:
             url = "https://cdn.discordapp.com/emojis/" + str(message2[1][-19:-1]) + ".png"
-            response = requests.get(url)
+            response = requests.get(url, timeout=10)
             img = Image.open(BytesIO(response.content))
             if (len(message2) > 2):
                 try:
@@ -426,7 +432,7 @@ async def get_emoji(message, client):
                     message.content[3].lower().encode("unicode_escape").decode()[-5:] + \
                     ".svg"
             try:
-                sent.edit(content="Processing ..")
+                await sent.edit(content="Processing ..")
                 cairosvg.svg2png(url=emoji, write_to="emoji.png", scale=float(message.content[5:]))
             except IndexError:
                 cairosvg.svg2png(url=emoji, write_to="emoji.png", scale=int(20))
@@ -435,7 +441,7 @@ async def get_emoji(message, client):
                 cairosvg.svg2png(url=emoji, write_to="emoji.png", scale=int(20))
                 await sent2.delete()
 
-            except:
+            except Exception:
                 cairosvg.svg2png(url=emoji, write_to="emoji.png", scale=int(20))
         except OSError:
             await message.channel.send("There is a problem with that emoji, sorry :frowning:")
@@ -443,7 +449,10 @@ async def get_emoji(message, client):
             await sent.edit(content="Processing ...")
             await message.channel.send(file=discord.File("emoji.png"))
             await sent.delete()
-    await sent.delete()
+    try:
+        await sent.delete()
+    except Exception:
+        pass
 
 
 async def resize_img(message):
@@ -473,7 +482,7 @@ async def resize_img(message):
     elif x == 1:
         max_factor = 250
     else:
-        max_factor == 1
+        max_factor = 1
 
     min_factor = max((1 / input_img.width), (1 / input_img.height))
 
@@ -549,9 +558,9 @@ async def sort_pixels(message):
                 input_img.putpixel((x, y), pixels[x][0:4])
             pixels.clear()
 
-            if y == input_img.width // 3:
+            if y == input_img.height // 3:
                 await sent.edit(content="Processing (this might take a while) ..")
-            elif y == 2 * input_img.width // 3:
+            elif y == 2 * input_img.height // 3:
                 await sent.edit(content="Processing (this might take a while) ...")
 
     else:
@@ -564,7 +573,7 @@ async def sort_pixels(message):
         await sent.edit(content="Processing (this might take a while) ..")
 
         pixels.sort(key=lambda tup: tup[4])  # sort pixels[]
-        final_img = Image.new("RGBA", (input_img.width, input_img.height), "rgba(0,0,255,0)")
+
 
         await sent.edit(content="Processing (this might take a while) ...")
 
@@ -634,8 +643,8 @@ async def get_size(message):
 
 
 async def twice_imagemaker(message):
-    naeyon_base_url = "https://i.imgur.com/jl3Lv0U.png"
-    naeyon_cutout_url = "https://i.imgur.com/OsQvrXh.png"
+    naeyon_base_url = "https://rimgo.pussthecat.org/jl3Lv0U.png"
+    naeyon_cutout_url = "https://rimgo.pussthecat.org/OsQvrXh.png"
 
     sent = await message.channel.send("Processing .")
     input_img = await read_image(message)
@@ -646,10 +655,10 @@ async def twice_imagemaker(message):
 
     input_img = input_img.convert("RGBA")
 
-    response = requests.get(naeyon_base_url)
+    response = requests.get(naeyon_base_url, timeout=10)
     img = Image.open(BytesIO(response.content))
 
-    response = requests.get(naeyon_cutout_url)
+    response = requests.get(naeyon_cutout_url, timeout=10)
     cutout = Image.open(BytesIO(response.content))
 
     size = 372, 272
@@ -668,8 +677,8 @@ async def twice_imagemaker(message):
 
 
 async def drawing_imagemaker(message):
-    drawing_base_url = "https://i.imgur.com/9XayuIf.png"
-    drawing_cutout_url = "https://i.imgur.com/NCTZJgG.png"  # "https://i.imgur.com/nRhholX.png"
+    drawing_base_url = "https://rimgo.pussthecat.org/9XayuIf.png"
+    drawing_cutout_url = "https://rimgo.pussthecat.org/NCTZJgG.png"  # "https://rimgo.pussthecat.org/nRhholX.png"
 
     sent = await message.channel.send("Processing .")
     input_img = await read_image(message)
@@ -679,10 +688,10 @@ async def drawing_imagemaker(message):
     await sent.edit(content="Processing ..")
     input_img = input_img.convert("RGBA")
 
-    response = requests.get(drawing_base_url)
+    response = requests.get(drawing_base_url, timeout=10)
     img = Image.open(BytesIO(response.content))
 
-    response = requests.get(drawing_cutout_url)
+    response = requests.get(drawing_cutout_url, timeout=10)
     cutout = Image.open(BytesIO(response.content))
 
     size = 1089, 961
@@ -694,9 +703,6 @@ async def drawing_imagemaker(message):
 
     cutout_2 = Image.new("RGBA", (1400, 1280), (0, 0, 0, 0))
     cutout_2.paste(cutout, (300, 0))
-    # bigger_img.save("drawing.png")
-    # await sent.delete()
-    # await message.channel.send(file=discord.File("drawing.png"))
 
     coeff = _create_coeff(
         (0, 0),
@@ -704,10 +710,6 @@ async def drawing_imagemaker(message):
         (input_img.width, input_img.height),
         (0, input_img.height),
         # =>
-        # (-500, 100),
-        # (input_img.width, -200000),
-        # (input_img.width, input_img.height),
-        # (0, input_img.height),
         (-176, 200),
         (input_img.width - 180, -840),
         (input_img.width + 183, input_img.height),
@@ -715,21 +717,12 @@ async def drawing_imagemaker(message):
     )
 
     input_img = input_img.transform((1400, 1280), Image.PERSPECTIVE, coeff, Image.BICUBIC)
-    # input_img.save("drawing.png")
-    # await message.channel.send(file=discord.File("drawing.png"))
     await sent.edit(content="Processing ...")
 
     blank = Image.new("RGBA", bigger_img.size, "rgba(189,177,166,255)")
     blank.paste(input_img, (243, 33), mask=input_img)
 
-    # bigger_img.save("drawing.png")
-    # await message.channel.send(file=discord.File("drawing.png"))
-    # blank.save("drawing.png")
-    # await message.channel.send(file=discord.File("drawing.png"))
-    # cutout_2.save("drawing.png")
-    # await message.channel.send(file=discord.File("drawing.png"))
-
-    img_final = ImageChops.composite(bigger_img, blank, cutout_2).crop((572, 0, 1400, 1280))
+    img_final= ImageChops.composite(bigger_img, blank, cutout_2).crop((572, 0, 1400, 1280))
     img_final.save("drawing.png")
     await sent.delete()
     await message.channel.send(file=discord.File("drawing.png"))
@@ -737,15 +730,15 @@ async def drawing_imagemaker(message):
 
 async def undo_img(message):
     sent = await message.channel.send("Processing .")
-    m = await message.channel.history(limit=30).flatten()
+    m = [msg async for msg in message.channel.history(limit=30)]
     counter = 0
     for i in range(30):
         if m[i].attachments:
             if is_valid_filetype(m[i].attachments[0].url):
                 readURL = m[i].attachments[0].url
-                response = requests.get(readURL)
+                response = requests.get(readURL, timeout=10)
                 image = Image.open(BytesIO(response.content))
-                if str(m[i].author) == "Shuckbot#6675" or counter == 1:
+                if m[i].author.bot or counter == 1:
                     counter = counter + 1
                     await sent.edit(content="Processing ..")
                 if counter == 2:
@@ -758,9 +751,9 @@ async def undo_img(message):
             if m[i].embeds[0].image:
                 if is_valid_filetype(m[i].embeds[0].image.url):
                     readURL = m[i].embeds[0].image.url
-                    response = requests.get(readURL)
+                    response = requests.get(readURL, timeout=10)
                     image = Image.open(BytesIO(response.content))
-                    if str(m[i].author) == "Shuckbot#6675" or counter == 1:
+                    if m[i].author.bot or counter == 1:
                         counter = counter + 1
                         await sent.edit(content="Processing ..")
                     if counter == 2:
@@ -773,9 +766,9 @@ async def undo_img(message):
         for word in words:
             if is_valid_filetype(word) and word[0:4] == "http":
                 try:
-                    response = requests.get(word)
+                    response = requests.get(word, timeout=10)
                     image = Image.open(BytesIO(response.content))
-                    if str(m[i].author) == "Shuckbot#6675" or counter == 1:
+                    if m[i].author.bot or counter == 1:
                         counter = counter + 1
                         await sent.edit(content="Processing ..")
                     if counter == 2:
@@ -794,8 +787,8 @@ async def undo_img(message):
 
 
 async def heejin_imagemaker(message):
-    heejin_base_url = "https://i.imgur.com/ZK4e545.png"
-    heejin_cutout_url = "https://i.imgur.com/qn7Un9h.png"
+    heejin_base_url = "https://rimgo.pussthecat.org/ZK4e545.png"
+    heejin_cutout_url = "https://rimgo.pussthecat.org/qn7Un9h.png"
 
     sent = await message.channel.send("Processing .")
     input_img = await read_image(message)
@@ -805,10 +798,10 @@ async def heejin_imagemaker(message):
     await sent.edit(content="Processing ..")
     input_img = input_img.convert("RGBA")
 
-    response = requests.get(heejin_base_url)
+    response = requests.get(heejin_base_url, timeout=10)
     img = Image.open(BytesIO(response.content))
 
-    response = requests.get(heejin_cutout_url)
+    response = requests.get(heejin_cutout_url, timeout=10)
     cutout = Image.open(BytesIO(response.content))
 
     size = 365, 299
@@ -826,8 +819,8 @@ async def heejin_imagemaker(message):
 
 
 async def school_imagemaker(message):
-    school_base_url = "https://i.imgur.com/Q7RBEfz.png"
-    school_cutout_url = "https://i.imgur.com/NHahWmf.png"
+    school_base_url = "https://rimgo.pussthecat.org/Q7RBEfz.png"
+    school_cutout_url = "https://rimgo.pussthecat.org/NHahWmf.png"
 
     sent = await message.channel.send("Processing .")
     input_img = await read_image(message)
@@ -838,10 +831,10 @@ async def school_imagemaker(message):
 
     input_img = input_img.convert("RGBA")
 
-    response = requests.get(school_base_url)
+    response = requests.get(school_base_url, timeout=10)
     img = Image.open(BytesIO(response.content))
 
-    response = requests.get(school_cutout_url)
+    response = requests.get(school_cutout_url, timeout=10)
     cutout = Image.open(BytesIO(response.content))
 
     size = 220, 153
@@ -874,8 +867,8 @@ async def school_imagemaker(message):
 
 
 async def lecture_imagemaker(message):
-    lecture_base_url = "https://i.imgur.com/K0Yy8Ef.png"
-    lecture_cutout_url = "https://i.imgur.com/yn2rbzY.png"
+    lecture_base_url = "https://rimgo.pussthecat.org/K0Yy8Ef.png"
+    lecture_cutout_url = "https://rimgo.pussthecat.org/yn2rbzY.png"
 
     sent = await message.channel.send("Processing .")
     input_img = await read_image(message)
@@ -885,10 +878,10 @@ async def lecture_imagemaker(message):
     await sent.edit(content="Processing ..")
     input_img = input_img.convert("RGBA")
 
-    response = requests.get(lecture_base_url)
+    response = requests.get(lecture_base_url, timeout=10)
     img = Image.open(BytesIO(response.content))
 
-    response = requests.get(lecture_cutout_url)
+    response = requests.get(lecture_cutout_url, timeout=10)
     cutout = Image.open(BytesIO(response.content))
 
     size = 415, 357
@@ -921,8 +914,8 @@ async def lecture_imagemaker(message):
 
 
 async def tesla_imagemaker(message):
-    tesla_base_url = "https://i.imgur.com/e8RIx2N.png"
-    tesla_cutout_url = "https://i.imgur.com/vusOnB8.png"
+    tesla_base_url = "https://rimgo.pussthecat.org/e8RIx2N.png"
+    tesla_cutout_url = "https://rimgo.pussthecat.org/vusOnB8.png"
 
     sent = await message.channel.send("Processing...")
     input_img = await read_image(message)
@@ -932,10 +925,10 @@ async def tesla_imagemaker(message):
 
     input_img = input_img.convert("RGBA")
 
-    response = requests.get(tesla_base_url)
+    response = requests.get(tesla_base_url, timeout=10)
     img = Image.open(BytesIO(response.content))
 
-    response = requests.get(tesla_cutout_url)
+    response = requests.get(tesla_cutout_url, timeout=10)
     cutout = Image.open(BytesIO(response.content))
 
     size = 561, 448
@@ -998,14 +991,14 @@ async def get_colour_from_hex(message):
 
 async def osu_imagemaker(message):
     templates = [
-        ("https://i.imgur.com/jVvNla4.png", "https://i.imgur.com/mK7vRZP.png", (902, 508), (31, 31)),
-        ("https://i.imgur.com/5mJ8JRe.png", "https://i.imgur.com/gjZ6oAd.png", (1091, 614), (24, 11)),
-        ("https://i.imgur.com/rMPA3Oj.png", "https://i.imgur.com/cBiW9GS.png", (1080, 605), (11, 13)),
-        ("https://i.imgur.com/lxHX0c5.png", "https://i.imgur.com/UmRonoQ.png", (925, 516), (13, 12)),
-        ("https://i.imgur.com/FfpTUe5.png", "https://i.imgur.com/ZaFklHg.png", (1083, 605), (16, 43)),
-        ("https://i.imgur.com/sayo07Z.png", "https://i.imgur.com/osQve7x.png", (1034, 582), (5, 5)),
-        ("https://i.imgur.com/iwP94yb.png", "https://i.imgur.com/3rrf6CA.png", (934, 529), (22, 24)),
-        ("https://i.imgur.com/pMdFgoQ.png", "https://i.imgur.com/Y0zs7XW.png", (818, 470), (0, 0))
+        ("https://rimgo.pussthecat.org/jVvNla4.png", "https://rimgo.pussthecat.org/mK7vRZP.png", (902, 508), (31, 31)),
+        ("https://rimgo.pussthecat.org/5mJ8JRe.png", "https://rimgo.pussthecat.org/gjZ6oAd.png", (1091, 614), (24, 11)),
+        ("https://rimgo.pussthecat.org/rMPA3Oj.png", "https://rimgo.pussthecat.org/cBiW9GS.png", (1080, 605), (11, 13)),
+        ("https://rimgo.pussthecat.org/lxHX0c5.png", "https://rimgo.pussthecat.org/UmRonoQ.png", (925, 516), (13, 12)),
+        ("https://rimgo.pussthecat.org/FfpTUe5.png", "https://rimgo.pussthecat.org/ZaFklHg.png", (1083, 605), (16, 43)),
+        ("https://rimgo.pussthecat.org/sayo07Z.png", "https://rimgo.pussthecat.org/osQve7x.png", (1034, 582), (5, 5)),
+        ("https://rimgo.pussthecat.org/iwP94yb.png", "https://rimgo.pussthecat.org/3rrf6CA.png", (934, 529), (22, 24)),
+        ("https://rimgo.pussthecat.org/pMdFgoQ.png", "https://rimgo.pussthecat.org/Y0zs7XW.png", (818, 470), (0, 0))
     ]
 
     index = random.randint(0, 7)
@@ -1023,10 +1016,10 @@ async def osu_imagemaker(message):
 
     input_img = input_img.convert("RGBA")
 
-    response = requests.get(osu_base_url)
+    response = requests.get(osu_base_url, timeout=10)
     img = Image.open(BytesIO(response.content))
 
-    response = requests.get(osu_cutout_url)
+    response = requests.get(osu_cutout_url, timeout=10)
     cutout = Image.open(BytesIO(response.content))
 
     size = templates[index][2]
@@ -1099,8 +1092,8 @@ async def noise_imagemaker(message):
 
 
 async def mokou_imagemaker(message):
-    base_url = "https://i.imgur.com/HczH3lx.png"
-    cutout_url = "https://i.imgur.com/VGI3zY5.png"
+    base_url = "https://rimgo.pussthecat.org/HczH3lx.png"
+    cutout_url = "https://rimgo.pussthecat.org/VGI3zY5.png"
 
     message_txt = 'Processing.'
     sent = await message.channel.send(message_txt)
@@ -1115,10 +1108,10 @@ async def mokou_imagemaker(message):
 
     input_img = input_img.convert("RGBA")
 
-    response = requests.get(base_url)
+    response = requests.get(base_url, timeout=10)
     img = Image.open(BytesIO(response.content))
 
-    response = requests.get(cutout_url)
+    response = requests.get(cutout_url, timeout=10)
     cutout = Image.open(BytesIO(response.content))
 
     size = 256, 177
@@ -1187,8 +1180,8 @@ async def image_shift(message):
 
 
 async def megumin_imagemaker(message):
-    base_url = "https://i.imgur.com/muK6Bm6.png"
-    cutout_url = "https://i.imgur.com/FnOWeGT.png"
+    base_url = "https://rimgo.pussthecat.org/muK6Bm6.png"
+    cutout_url = "https://rimgo.pussthecat.org/FnOWeGT.png"
 
     sent = await message.channel.send("Processing...")
     input_img = await read_image(message)
@@ -1198,10 +1191,10 @@ async def megumin_imagemaker(message):
 
     input_img = input_img.convert("RGBA")
 
-    response = requests.get(base_url)
+    response = requests.get(base_url, timeout=10)
     img = Image.open(BytesIO(response.content))
 
-    response = requests.get(cutout_url)
+    response = requests.get(cutout_url, timeout=10)
     cutout = Image.open(BytesIO(response.content))
 
     size = 362, 200
@@ -1234,7 +1227,7 @@ async def megumin_imagemaker(message):
 
 
 async def weezer_imagemaker(message):
-    mask_url = 'http://imgur.com/UUPCf9x.png'
+    mask_url = 'http://rimgo.pussthecat.org/UUPCf9x.png'
 
     sent = await message.channel.send("Processing...")
     input_img = await read_image(message)
@@ -1246,7 +1239,7 @@ async def weezer_imagemaker(message):
 
     input_img = rectangle_image_crop(input_img.convert("RGBA"), size)
 
-    response = requests.get(mask_url)
+    response = requests.get(mask_url, timeout=10)
     mask = Image.open(BytesIO(response.content))
 
     blank = Image.new("RGBA", size, "rgba(210,210,210,255)")
@@ -1261,12 +1254,12 @@ async def weezer_imagemaker(message):
 
 
 async def sickos_imagemaker(message):
-    mask_url = 'https://i.imgur.com/38TUcs6.png'
+    mask_url = 'https://rimgo.pussthecat.org/38TUcs6.png'
 
     sent = await message.channel.send("Processing...")
     try:
         input_img = await read_image(message)
-    except:
+    except Exception:
         await sent.edit(content="There\'s something wrong with your image :(")
         return
     if input_img is None:
@@ -1274,18 +1267,18 @@ async def sickos_imagemaker(message):
         return
 
 
-    MAXSZ = 800
+    MAXSZ= 800
     if input_img.height > MAXSZ or input_img.width > MAXSZ:
         input_img = input_img.resize((MAXSZ, input_img.height*MAXSZ//input_img.width) if input_img.width > input_img.height
                                                 else (input_img.width*MAXSZ//input_img.height, MAXSZ), resample=Image.BILINEAR).convert("RGBA")
     print((input_img.size))
-    response = requests.get(mask_url)
+    response = requests.get(mask_url, timeout=10)
     mask = Image.open(BytesIO(response.content))
 
     blank = Image.new("RGBA", input_img.size, "rgba(210,210,210,255)")
     try:
         blank.paste(input_img, mask=input_img)
-    except:
+    except Exception:
         blank.paste(input_img)
 
     if input_img.width > input_img.height:
@@ -1306,12 +1299,12 @@ async def sickos_imagemaker(message):
 
 
 async def tom_imagemaker(message):
-    mask_url = 'https://i.imgur.com/XUt3CFq.png'
+    mask_url = 'https://rimgo.pussthecat.org/XUt3CFq.png'
 
     sent = await message.channel.send("Processing...")
     try:
         input_img = await read_image(message)
-    except:
+    except Exception:
         await sent.edit(content="There\'s something wrong with your image :(")
         return
     if input_img is None:
@@ -1322,7 +1315,7 @@ async def tom_imagemaker(message):
 
     input_img = input_img.convert("RGBA")
 
-    response = requests.get(mask_url)
+    response = requests.get(mask_url, timeout=10)
     mask = Image.open(BytesIO(response.content))
     if input_img.width > input_img.height:
         mask = mask.resize((input_img.height, input_img.height), resample=Image.BILINEAR)
@@ -1359,13 +1352,13 @@ async def to_rgb(message):
 async def get_avatar(message):
     message_split = message.clean_content.split(' ')
     if len(message_split) == 1:
-        await message.channel.send(message.author.avatar_url)
+        await message.channel.send(message.author.avatar.url)
     else:
         msg = ''
         for member in message.mentions:
-            msg = msg + str(member.avatar_url) + '\n'
+            msg = msg + str(member.avatar.url) + '\n'
         if msg == '':
-            await message.channel.send(message.author.avatar_url)
+            await message.channel.send(message.author.avatar.url)
         else:
             await message.channel.send(msg)
 
@@ -1400,7 +1393,7 @@ async def purple(message):
 
 async def whatifitwaspurple(message):
     if await purple(message) == "sent":
-        await message.channel.send("https://i.imgur.com/Id48ya7.png")
+        await message.channel.send("https://rimgo.pussthecat.org/Id48ya7.png")
 
 
 async def mixer(message):
@@ -1426,7 +1419,7 @@ async def mixer(message):
         input_img = input_img.resize((int(input_img.width * MAX_DIM / input_img.height), MAX_DIM),
                                      resample=Image.BICUBIC)
     if input_img.width > MAX_DIM:
-        input_img = input_img.resize(MAX_DIM, (int(input_img.height * MAX_DIM / input_img.width)),
+        input_img = input_img.resize((MAX_DIM, int(input_img.height * MAX_DIM / input_img.width)),
                                      resample=Image.BICUBIC)
 
     for y in range(input_img.height):

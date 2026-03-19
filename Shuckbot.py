@@ -5,7 +5,8 @@ from tinydb import TinyDB, Query
 import discord
 from discord.ext import commands
 
-from modules import tags, imagesearch, metar, imagefun, help, picturebook, cleverbot, games, parameters
+from modules import tags, imagesearch, imagefun, help, picturebook, \
+    games, parameters, avwx, identify
 
 params = parameters.params
 
@@ -28,13 +29,13 @@ def process_prefix(p_bot, message):
         return result[0]['prefix']
 
 
-bot = commands.Bot(command_prefix=process_prefix, intents=discord.Intents.default())
+bot = commands.Bot(command_prefix=process_prefix, intents=discord.Intents.all())
 bot.remove_command("help")  # discord.py ships with a default help command: must remove it
 
 
 @bot.command(aliases=["shuckbotprefix", "shuckprefix"])
 async def prefix(ctx, *args):
-    if not ctx.message.author.guild_permissions.manage_guild or not ctx.message.author.guild_permissions.administrator:
+    if not (ctx.message.author.guild_permissions.manage_guild or ctx.message.author.guild_permissions.administrator):
         await ctx.channel.send("You need the **Manage Server** permission to do that.")
     elif len(args) > 1 or len(args) == 0 or len(args[0]) > 1:
         await ctx.channel.send("**Format**: ;prefix <single character>")
@@ -50,7 +51,7 @@ async def ping(ctx):
     now = datetime.now()
     sent = await ctx.channel.send("Measuring ping...")
     diff = sent.created_at - now
-    await sent.edit(content="Pong! Shuckbot's ping is **" + str(int(diff.microseconds / 1000)) + "**ms.")
+    await sent.edit(content="Pong! Shuckbot's ping is **" + str(int(diff.total_seconds() * 1000)) + "**ms.")
 
 
 @bot.command(aliases=["help"])
@@ -76,7 +77,7 @@ async def invite(ctx):
 
 @bot.command(aliases=["picturebook", "photobook"])
 async def pb(ctx, *args):
-    if ' ' not in ctx.message:
+    if ' ' not in ctx.message.clean_content:
         await picturebook.get_saved(ctx.message)
 
     else:
@@ -90,32 +91,42 @@ async def pb(ctx, *args):
 
 
 @bot.command(aliases=["t"])
-async def tag(ctx, *args):
-    if len(args) == 0:
+async def tag(ctx):
+    args = ctx.message.clean_content.split(' ', 3)
+    if len(args) < 2:
         await tags.syntax_error(ctx.message)
     else:
-        if args[0] == 'add':
+        if args[1] == 'add':
             await tags.add(ctx.message)
 
-        elif args[0] == 'remove' or args[0] == "delete":
+        elif args[1] == 'remove' or args[1] == "delete":
             await tags.remove(ctx.message, params["ownerID"])
 
-        elif args[0] == 'edit':
+        elif args[1] == 'edit':
             await tags.edit(ctx.message, params["ownerID"])
 
-        elif args[0] == 'owner':
-            owner_id = tags.owner(ctx.message)
-            tag_owner = await bot.fetch_user(owner_id)
-            if tag_owner == 0:
-                await ctx.channel.send("Tag **" + args[1] + "** does not exist")
+        elif args[1] == 'owner':
+            if len(args) < 3:
+                await tags.syntax_error(ctx.message)
             else:
-                await ctx.channel.send("Tag **" + args[1] + "** is owned by `" + str(tag_owner) + "`")
+                owner_id = tags.owner(ctx.message)
+                if owner_id == 0:
+                    await ctx.channel.send("Tag **" + args[2] + "** does not exist")
+                else:
+                    tag_owner = await bot.fetch_user(owner_id)
+                    await ctx.channel.send("Tag **" + args[2] + "** is owned by `" + str(tag_owner) + "`")
 
-        elif args[0] == 'list':
+        elif args[1] == 'list':
             await tags.owned(ctx.message)
 
-        elif args[0] == 'random':
+        elif args[1] == 'random':
             await tags.get_random(ctx.message)
+
+        elif args[1] == 'disable':
+            await tags.disable(ctx.message)
+
+        elif args[1] == 'enable':
+            await tags.enable(ctx.message)
 
         else:
             await tags.get(ctx.message)
@@ -123,7 +134,12 @@ async def tag(ctx, *args):
 
 @bot.command()
 async def metar(ctx):
-    await metar.metar(ctx.message, params["avwxKey"])
+    await avwx.metar(ctx.message, params["avwxKey"])
+
+
+@bot.command()
+async def taf(ctx):
+    await avwx.taf(ctx.message, params["avwxKey"])
 
 
 @bot.command(aliases=["hold"])
@@ -251,19 +267,10 @@ async def weezer(ctx):
     await imagefun.weezer_imagemaker(ctx.message)
 
 
-@bot.event
-async def on_command_error(ctx, error):
-    if isinstance(error, commands.CommandOnCooldown):
-        await ctx.send('Sorry, this command is on cooldown! Try again in {:.2f} seconds'.format(error.retry_after))
-
-
-@commands.cooldown(1, 5, commands.BucketType.guild)
 @bot.command(aliases=["g"])
+@commands.cooldown(1, 5, commands.BucketType.guild)
 async def game(ctx):
-    try:
-        await games.game(ctx.message, bot, params["mapquest"])
-    except Exception as e:
-        await ctx.send('An error has occured: ' + str(e))
+    await games.game(ctx.message, bot, params["mapquest"])
 
 
 @bot.command(aliases=["torgb", "2rgb"])
@@ -296,6 +303,128 @@ async def sickos(ctx):
     await imagefun.sickos_imagemaker(ctx.message)
 
 
+
+# Store active readycheck messages
+readycheck_messages = {}
+
+
+class ReadyCheckView(discord.ui.View):
+    def __init__(self, message_id):
+        super().__init__(timeout=None)
+        self.message_id = message_id
+    
+    @discord.ui.button(label="Ready", style=discord.ButtonStyle.green, custom_id="ready_button")
+    async def ready_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.handle_button_click(interaction, "ready")
+    
+    @discord.ui.button(label="Not Ready", style=discord.ButtonStyle.red, custom_id="not_ready_button")
+    async def not_ready_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.handle_button_click(interaction, "not_ready")
+    
+    async def handle_button_click(self, interaction: discord.Interaction, button_type: str):
+        if self.message_id not in readycheck_messages:
+            await interaction.response.defer()
+            return
+        
+        data = readycheck_messages[self.message_id]
+        username = interaction.user.display_name
+        
+        if button_type == "ready":
+            if username in data['ready']:
+                # User clicked ready again, remove them
+                data['ready'].discard(username)
+            else:
+                # Add to ready, remove from not ready
+                data['ready'].add(username)
+                data['not_ready'].discard(username)
+        else:  # not_ready
+            if username in data['not_ready']:
+                # User clicked not ready again, remove them
+                data['not_ready'].discard(username)
+            else:
+                # Add to not ready, remove from ready
+                data['not_ready'].add(username)
+                data['ready'].discard(username)
+        
+        await update_readycheck_message(self.message_id)
+        await interaction.response.defer()
+
+
+@bot.command()
+async def readycheck(ctx):
+    """Create a ready check poll for Dota 2 Gamers"""
+    # Only allow in specific server
+    if ctx.guild is None or ctx.guild.id != 149264038017105920:
+        return
+    
+    # Get the Dota 2 Gamers role by ID
+    dota_role = ctx.guild.get_role(1240097702864490507)
+    
+    if dota_role is None:
+        await ctx.send("Could not find the @Dota 2 Gamers role!")
+        return
+    
+    # Send initial message with role ping and buttons
+    view = ReadyCheckView(None)
+    message = await ctx.send(f"READY CHECK {dota_role.mention}\nREADY (0): \nNOT READY (0): ", view=view)
+    
+    # Update view with message ID and store message info
+    view.message_id = message.id
+    readycheck_messages[message.id] = {
+        'channel_id': message.channel.id,
+        'ready': set(),
+        'not_ready': set()
+    }
+
+
+async def update_readycheck_message(message_id):
+    """Update the readycheck message with current button status"""
+    if message_id not in readycheck_messages:
+        return
+    
+    data = readycheck_messages[message_id]
+    channel = bot.get_channel(data['channel_id'])
+    
+    try:
+        message = await channel.fetch_message(message_id)
+    except Exception:
+        # Message was deleted
+        del readycheck_messages[message_id]
+        return
+    
+    # Get the Dota 2 Gamers role by ID
+    dota_role = message.guild.get_role(1240097702864490507)
+    role_mention = dota_role.mention if dota_role else "@Dota 2 Gamers"
+    
+    # Build the message content
+    ready_list = sorted(data['ready'])
+    not_ready_list = sorted(data['not_ready'])
+    
+    content = f"READY CHECK {role_mention}\n"
+    
+    if ready_list:
+        content += f"READY ({len(ready_list)}): {', '.join(ready_list)}\n"
+    else:
+        content += f"READY (0): \n"
+    
+    if not_ready_list:
+        content += f"NOT READY ({len(not_ready_list)}): {', '.join(not_ready_list)}"
+    else:
+        content += f"NOT READY (0): "
+    
+    await message.edit(content=content)
+
+
+@bot.command(aliases=["identify"])
+async def id(ctx):
+    await identify.identify(ctx.message)
+
+
+@bot.command(aliases=["landmarks"])
+async def landmark(ctx):
+    await identify.landmark(ctx.message)
+
+
 @bot.event
 async def on_message(message):
     await bot.process_commands(message)
@@ -308,8 +437,11 @@ async def on_message(message):
     elif message.clean_content.lower() == "s":
         await imagesearch.stop(message)
 
-    elif message.clean_content.startswith("@" + message.guild.get_member(bot.user.id).display_name):
-        await message.channel.send(
-            cleverbot.cleverbot_message(message, message.guild.get_member(bot.user.id).display_name))
+@bot.event
+async def on_command_error(ctx, error):
+    if isinstance(error, commands.CommandOnCooldown):
+        await ctx.send('Sorry, this command is on cooldown! Try again in {:.2f} seconds'.format(error.retry_after))
+    elif not isinstance(error, commands.CommandNotFound):
+        print(error)
 
 bot.run(params["token"])

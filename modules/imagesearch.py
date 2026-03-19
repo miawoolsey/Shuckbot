@@ -1,6 +1,7 @@
 import random
 import discord
 import untangle
+from asyncio import sleep
 from googleapiclient.discovery import build
 from googleapiclient import errors
 
@@ -31,6 +32,11 @@ async def google_search(message):
         await message.channel.send("The daily quota for Google searches has been exceeded.")
     except NameError:  # sometimes build() fails when you're over quota instead of returning the 403 here
         await message.channel.send("The daily quota for Google searches has been exceeded.")
+    except ConnectionResetError:
+        print("Connection reset by google!")
+        await message.channel.send("Connection error. Please try again.")
+    except Exception as e:
+        print("Error in google search: ", e)
 
 
 async def r34_search(message):
@@ -38,8 +44,13 @@ async def r34_search(message):
         await message.channel.send("Hey! This isn't an nsfw channel! You can't use that here!")
         return
     tags = message.clean_content.split(' ', 1)[1]
-    resp = untangle.parse("https://rule34.xxx/index.php?page=dapi&s=post&q=index&tags=" + tags)
+    urltags = tags.replace(" ", "%20")
+    print(tags, flush=True)
+    resp = untangle.parse("https://rule34.xxx/index.php?page=dapi&s=post&q=index&limit=1000&tags=" + urltags)
+    print("hello", flush=True)
+    print(resp.posts.children, flush=True)
     length = len(resp.posts.children)
+    print(length, flush=True)
     if length == 0:
         await message.channel.send("No results found!")
         return
@@ -58,7 +69,7 @@ async def create_viewer(message, images_array, length, title, **kwargs):
     embed = discord.Embed()
     embed.title = title
     embed.set_image(url=images_array[0]).set_footer(text="Page 1 of " + str(length)) \
-        .set_author(name=message.author.display_name, icon_url=message.author.avatar_url)
+        .set_author(name=message.author.display_name, icon_url=message.author.display_avatar.url)
     if len(authors):
         embed.description = "By `" + str(message.guild.get_member(authors[0])) + "`"
     sent = await message.channel.send(embed=embed)  # save the message

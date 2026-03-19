@@ -1,0 +1,10 @@
+services:
+  app:
+    build: .
+    container_name: Shuckbot
+    restart: always
+    command: python -u Shuckbot.py
+    volumes:
+      - .:/app
+    working_dir: /app
+

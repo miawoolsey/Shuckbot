@@ -15,6 +15,8 @@ from io import BytesIO
 import json
 from typing import Optional, List, Any
 
+def patch_asscalar(a):
+    return a.item()
 
 async def game(message, client, key):
     try:
@@ -128,9 +130,9 @@ def list_contains_return(l1, l2) -> Optional[Any]:
 
 
 async def username_from_mention(mention, client) -> str:
-    name = str(mention)[2:-1].replace("!", "")
-    name = await client.fetch_user(int(name))
-    return str(name)
+    user_id = str(mention)[2:-1].replace("!", "")
+    user = await client.fetch_user(int(user_id))
+    return user.name
 
 
 # taken from https://github.com/yfxu/anui/blob/main/bot/cogs/utils/mapquest.py
@@ -285,13 +287,16 @@ async def colour_guesser_multi(message, client, _letter="", game_time=15):
             img.paste(Image.new("RGB", (size // 2, size), ImageColor.getcolor(('#' + final_guesses[x][1]), "RGB")),
                       (size // 2, x * size // guesses))
         img.save("clrguessresult.png")
+        print(winner[0])
+        print(client.get_user(int(winner[0])))
         await message.channel.send(
-            "The actual colo" + _letter + "r was " + col + "!\n" + client.get_user(int(winner[0])).mention
-            + " got " + str(int(np.ceil(winner[2]))) + "/100 points\n", file=discord.File("clrguessresult.png"))
+            f"The actual colo{_letter}r was {col}!\n<@{winner[0]}>"
+            f" got {str(int(np.ceil(winner[2])))}/100 points\n", file=discord.File("clrguessresult.png"))
+
         to_send = ""
         for x in range(0, len(final_guesses)):
-            to_send += str(x + 1) + ". " + client.get_user(final_guesses[x][0]).mention + ": " + \
-                       str(int(np.ceil(final_guesses[x][2]))) + "/100 points (#" + final_guesses[x][1] + ")\n"
+            to_send += f"{str(x + 1)}. <@{final_guesses[x][0]}>: {str(int(np.ceil(final_guesses[x][2])))}/100 points (#{final_guesses[x][1]})\n"
+
         await message.channel.send(to_send)
 
 
@@ -306,6 +311,7 @@ def rgb_to_lab(r, g, b):
 
 
 def calculate_score(r, g, b, ar, ag, ab):
+    setattr(np, "asscalar", patch_asscalar)
     lab_obj = rgb_to_lab(r, g, b)
     a_lab_obj = rgb_to_lab(ar, ag, ab)
 
@@ -351,14 +357,14 @@ def get_flag(message, difficulty):
         country_index = random.randint(min_index, max_index - 1)
     except ValueError:
         print(f"uh oh! value error raised: {min_index, max_index - 1, len(flags), lengths}")
-        country_index = random.randint(0, len(flags))
+        country_index = random.randint(0, len(flags) - 1)
 
     try:
         current_flag = flags[country_index]
-        response = requests.get(current_flag["url"])
+        response = requests.get(current_flag["url"], timeout=10)
         flag_img = Image.open(BytesIO(response.content))
         flag_img.save("flag.png")
-    except:
+    except Exception:
         print(country_index)
         return
 
@@ -366,7 +372,7 @@ def get_flag(message, difficulty):
 
 
 async def flag_guesser(message, client, difficulty=0, game_time=15):
-    type_f = ["country", "country", "country", "country", "state", "flag", "flag", "Japanese Prefecture", "flag", "flag", "flag", "flag"]
+    type_f = ["country", "country", "country", "country", "flag", "flag", "flag", "Japanese Prefecture", "flag", "flag", "flag", "flag"]
 
     current_flag = get_flag(message, difficulty)
     if current_flag is None:
@@ -415,7 +421,7 @@ async def flag_guesser(message, client, difficulty=0, game_time=15):
 async def flag_guesser_multi(message, client, difficulty=0, points_to_win=5, game_time=15):
     points_to_win = max(min(points_to_win, 30), 2)
     msg1 = await message.channel.send(f'Get ready to guess the flag! The first person to correctly guess {points_to_win} flags wins!')
-    type_f = ["country", "country", "country", "country", "state", "flag", "flag", "Japanese Prefecture", "flag",
+    type_f = ["country", "country", "country", "country", "flag", "flag", "flag", "Japanese Prefecture", "flag",
               "flag", "flag", "flag"]
 
     current_flag = None
@@ -439,7 +445,7 @@ async def flag_guesser_multi(message, client, difficulty=0, points_to_win=5, gam
             return
 
         if sent_embed is not None:
-            sent_embed.delete()
+            await sent_embed.delete()
 
         # await message.channel.send(f'Sorry, something went wrong! Please try again')
 
@@ -495,18 +501,6 @@ async def flag_guesser_multi(message, client, difficulty=0, points_to_win=5, gam
 
 def geoguesser_points(x):
     # calculates points for geoguessr somehow
-    # a,b,c,c3,a3,d,e,c1,a1,f,c2,a2,g,a4,g4,c4,a5,g5,c5,a6,g6,c6,a7,g7,c7,a8,g8,c8,a9,g9,c9=2330,-490,380,170,25,0,np.e,3060,300,-10,345,2850,-20,141.29,0,1000,900,180.7,120,-2.6,-1.6,12.8,-340,484,200,107,0,2200,480,680,600
-    # return max(min(int(a*e**(-0.5*((x-b)/c)**2) + a3*e**(-0.5*((x-d)/c3)**2) + a1*e**(-0.5*((x-f)/c1)**2) + a2*e**(-0.5*((x-g)/c2)**2) + a4*e**(-0.5*((x-g4)/c4)**2) + a5*e**(-0.5*((x-g5)/c5)**2) + a6*e**(-0.5*((x-g6)/c6)**2) + a7*e**(-0.5*((x-g7)/c7)**2) + a8*e**(-0.5*((x-g8)/c8)**2) + a9*e**(-0.5*((x-g9)/c9)**2)),5000),0)
-    # a, b, c, c3, a3, d, e, c1, a1, f, c2, a2, g, a4, g4, c4, a5, g5, c5, a6, g6, c6, a7, g7, c7, a8, g8, c8 = 2330, -490, 380, 170, 25, 0, np.e, 3060, 300, -10, 380, 3150, -20, 156, 480, 1000, 900, 180.7, 120, -2.6, -1.6, 12.8, -340, 484, 200, 107, 0, 2200
-    # return max(min(int(a * e ** (-0.5 * ((x - b) / c) ** 2) + a3 * e ** (-0.5 * ((x - d) / c3) ** 2) + a1 * e ** (
-    #             -0.5 * ((x - f) / c1) ** 2) + a2 * e ** (-0.5 * ((x - g) / c2) ** 2) + a4 * e ** (
-    #                                -0.5 * ((x - g4) / c4) ** 2) + a5 * e ** (-0.5 * ((x - g5) / c5) ** 2) + a6 * e ** (
-    #                                -0.5 * ((x - g6) / c6) ** 2) + a7 * e ** (-0.5 * ((x - g7) / c7) ** 2) + a8 * e ** (
-    #                                -0.5 * ((x - g8) / c8) ** 2)), 5000), 0)
-    # a, a1, a2, a3, a4, a5, a6, a7 = [4817.435, 914, 760, 160, 210, 37, -41.81, 43]
-    # b, b1, b2, b3, b4, b5, b6, b7 = [-49, 1400, 3040, 2380, 6600, 2800, 63, 8500]
-    # c, c1, c2, c3, c4, c5, c6, c7 = [670, 620, 1740, 600, 1000, 530, 364, 767]
-    # d, d4 = [-0.5, -0.3]
     a = [4817.435, 914, 760, 160, 210, 37, -41.81, 43]
     b = [-49, 1400, 3040, 2380, 6600, 2800, 63, 8500]
     c = [670, 620, 1740, 600, 1000, 530, 364, 767]
@@ -531,9 +525,9 @@ def make_3_map(g, filename):
     else:
         idx2 = idx
 
-    map1 = Image.open(BytesIO(requests.get(map_url[:idx - 1] + '13' + map_url[idx2:]).content))
-    map2 = Image.open(BytesIO(requests.get(map_url[:idx - 1] + '7' + map_url[idx2:]).content))
-    map3 = Image.open(BytesIO(requests.get(map_url[:idx - 1] + '2' + map_url[idx2:]).content))
+    map1 = Image.open(BytesIO(requests.get(map_url[:idx - 1] + '13' + map_url[idx2:], timeout=10).content))
+    map2 = Image.open(BytesIO(requests.get(map_url[:idx - 1] + '7' + map_url[idx2:], timeout=10).content))
+    map3 = Image.open(BytesIO(requests.get(map_url[:idx - 1] + '2' + map_url[idx2:], timeout=10).content))
 
     img = Image.new("RGB", (map1.width + map2.width + map3.width + 4, map1.height), 'black')
     img.paste(map1)
@@ -557,7 +551,7 @@ async def geoguesser_game(message, client, key, game_time=60):
     embed_intro.colour = discord.Color.from_rgb(*embed_colour)
     embed_intro.type = "rich"
     embed_intro.set_footer(text='NOTE: your next message will count as your answer!')
-    Image.open(BytesIO(requests.get(loc['url']).content)).save('location.png')
+    Image.open(BytesIO(requests.get(loc['url'], timeout=10).content)).save('location.png')
     embed_intro.set_image(url="attachment://location.png")
     await message.channel.send(embed=embed_intro, file=discord.File("location.png"))
 
@@ -651,8 +645,8 @@ async def geography_map(message, client, area, mode, geo, game_time):
     index = random.randint(0, len(geo) - 1)
     pref = geo[index]
     try:
-        response = requests.get(pref["map_url"])
-    except:
+        response = requests.get(pref["map_url"], timeout=10)
+    except Exception:
         print(geo[index])
         await message.channel.send(f"Something broke! Please try the command again")
         return
@@ -691,11 +685,11 @@ async def get_stats(message, client, user_mention, user_game):
     elif user_game == 'flag':
         try:
             total = db[user_mention]['flag']['total']
-        except:
-            await message.channel.send(f"{user_name[:-5]} has not played this game yet!")
+        except Exception:
+            await message.channel.send(f"{user_name} has not played this game yet!")
             return
 
-        embed = discord.Embed(title=f"Stats for user {user_name[:-5]} for the Flag game")
+        embed = discord.Embed(title=f"Stats for user {user_name} for the Flag game")
         embed.set_footer(text=f"Stat collection started 3/23/2021")
         embed.colour = discord.Colour.red()
         embed.type = "rich"
@@ -704,11 +698,11 @@ async def get_stats(message, client, user_mention, user_game):
 
         try:
             embed.add_field(name=f"Rounds won in multiplayer:", value=f"{db[user_mention]['flag']['rounds_won']}")
-        except:
+        except Exception:
             embed.add_field(name=f"Rounds won in multiplayer:", value=f"0")
         try:
             embed.add_field(name=f"Games won in multiplayer:", value=f"{db[user_mention]['flag']['games_won']}")
-        except:
+        except Exception:
             embed.add_field(name=f"Games won in multiplayer:", value=f"0")
 
         sent_embed = await message.channel.send(embed=embed)
@@ -718,11 +712,11 @@ async def get_stats(message, client, user_mention, user_game):
     else:  # general
         try:
             total = db[user_mention]['flag']['total']
-        except:
-            await message.channel.send(f"{user_name[:-5]} has not played this game yet!")
+        except Exception:
+            await message.channel.send(f"{user_name} has not played this game yet!")
             return
 
-        embed = discord.Embed(title=f"Stats for user {user_name[:-5]}")
+        embed = discord.Embed(title=f"Stats for user {user_name}")
         embed.set_footer(text=f"Stat collection started 3/23/2021\nFor more stats, add the name of the game to your mesage!")
         embed.colour = discord.Colour.red()
         embed.type = "rich"
@@ -742,23 +736,16 @@ async def get_leaderboard(message, client):
 
     t = time.time()
 
-    a = None
-    for u, _ in db.items():
-        a = u
-
     for user, d in db.items():
-        print(f"{user}:%.2f seconds (%.3f minutes)" % (((time.time() - t), (time.time() - t) / 60)))
-        if user == a:  # without this the command can take 10 times longer for some reason
-            break
-        name = str(await username_from_mention(user, client))[:-5]
+        name = await username_from_mention(user, client)
         temp.append([d['flag']['total'], name])
         try:
             temp3.append([d['flag']['rounds_won'], name])
-        except:
+        except Exception:
             continue
         try:
             temp2.append([d['flag']['games_won'], name])
-        except:
+        except Exception:
             continue
         # print(f'{user} is here')
 
@@ -863,7 +850,13 @@ def increment_user(user_mention, game_played: str, **kwargs):
                 if value[0] in df[user_mention][game_played][key]:
                     df[user_mention][game_played][key][value[0]] += 1
                 else:
-                    df[user_mention][game_played][key][value[0]] = 1
+                    try:
+                        df[user_mention][game_played][key][value[0]] = 1
+                    except TypeError:
+                        print(f'idk how we got this typeerror bro {game_played}, {key}, {value} ')
+                        print(f'{value[0]}')
+                        print(f'{df[user_mention][game_played][key][value[0]]}')
+                        raise
             elif type(value) == int or type(value) == float:
                 if key[-1] == 'A':  # cumulative mean, requires the total to be initialized and incremented first
                     # print('doing cumulative mean')
