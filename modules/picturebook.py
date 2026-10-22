@@ -1,108 +1,67 @@
-import re
+"""A server-wide collection of saved images."""
+from __future__ import annotations
 
-import requests
+from discord.ext import commands
+from tinydb import Query
 
-from modules import imagesearch
-from tinydb import TinyDB, Query
+from modules.config import BASE_DIR, Config
+from modules.image_input import URL_SOURCE, find_image_url
+from modules.storage import open_db
+from modules.viewer import viewers
 
-saved = TinyDB("picturebook.json")
-
-
-def is_valid_filetype(str):
-    return re.search(r".*(\.png|\.jpg|\.gif|\.jpeg|\.webp|\.PNG|\.JPG|\.GIF|\.JPEG|\.WEBP).*", str)
+Image = Query()
 
 
-async def read_image(message):
-    args = message.clean_content.split(' ')
+class Picturebook(commands.Cog):
+    def __init__(self, bot: commands.Bot, config: Config) -> None:
+        self.bot = bot
+        self.config = config
+        self.db = open_db(BASE_DIR / "picturebook.json")
 
-    async def search_previous():
-        m = [msg async for msg in message.channel.history(limit=20)]
-        for i in range(20):
-            if m[i].attachments:
-                if is_valid_filetype(m[i].attachments[0].url):
-                    return m[i].attachments[0].url
-            if m[i].embeds:
-                if m[i].embeds[0].image:
-                    if is_valid_filetype(m[i].embeds[0].image.url):
-                        return m[i].embeds[0].image.url
-            words = m[i].clean_content.split(' ')
-            for word in words:
-                if is_valid_filetype(word) and word[0:4] == "http":
-                    return word
-        return None
+    def _table(self, guild_id: int):
+        return self.db.table(str(guild_id))
 
-    if len(args) >= 2:
-        if args[1][0:4] == "http" and is_valid_filetype(args[1]):
-            try:
-                requests.get(args[1], timeout=10)
-            except requests.exceptions.ConnectionError:
-                await message.channel.send("Your image is invalid!")
-                return
-            else:
-                return args[1]
+    @commands.command(aliases=["picturebook", "photobook"])
+    @commands.guild_only()
+    async def pb(self, ctx: commands.Context, *args: str) -> None:
+        if not args:
+            await self.show(ctx)
+        elif args[0] in ("add", "save"):
+            await self.save(ctx)
+        elif args[0] in ("remove", "delete", "rm"):
+            await self.remove(ctx)
+
+    async def save(self, ctx: commands.Context) -> None:
+        image = await find_image_url(ctx.message, URL_SOURCE)
+        if image is None:
+            return
+        table = self._table(ctx.guild.id)
+        if table.contains(Image.image == image):
+            await ctx.send("That image is already in the picturebook!")
+            return
+        table.insert({"server": ctx.guild.id, "image": image, "owner": ctx.author.id})
+        await ctx.send("Image saved!")
+
+    async def show(self, ctx: commands.Context) -> None:
+        saved = self._table(ctx.guild.id).all()
+        if not saved:
+            await ctx.send("There are no saved images in this server! Use `;save` to save one.")
+            return
+        newest_first = list(reversed(saved))
+        await viewers.create(ctx.message, [item["image"] for item in newest_first], "Picturebook",
+                             authors=[item["owner"] for item in newest_first])
+
+    async def remove(self, ctx: commands.Context) -> None:
+        current = viewers.current(ctx.channel.id)
+        if current is None:
+            await ctx.send("You don't have an image selected in the picturebook!")
+            return
+        table = self._table(ctx.guild.id)
+        result = table.get(Image.image == current.current_image)
+        if result is None:
+            await ctx.send("Something has gone terribly wrong! Sorry!")
+        elif result["owner"] == ctx.author.id or self.config.is_owner(ctx.author.id):
+            table.remove(Image.image == current.current_image)
+            await ctx.send("Removed the current image!")
         else:
-            if message.mentions:
-                return message.mentions[0].avatar.url
-            else:
-                temp = await search_previous()
-                if temp is None:
-                    await message.channel.send("Your URL is not properly formatted! Currently I can only process URL's "
-                                               "that end in .png, .jpg, .gif, or .webp")
-                    return
-                return temp
-    else:
-        if message.attachments:
-            if is_valid_filetype(message.attachments[0].url):
-                return message.attachments[0].url
-            else:
-                await message.channel.send("Your attached image is not a valid file type! (png, jpg, gif)")
-                return
-        else:
-            temp = await search_previous()
-            if temp is None:
-                await message.channel.send("Your URL is not properly formatted! Currently I can only process URL's "
-                                           "that end in .png, .jpg, .gif, or .webp")
-                return
-            return temp
-
-
-async def save(message):
-    image = await read_image(message)
-    if image is None:
-        return
-    result = saved.table(str(message.guild.id)).search(Query().image == image)
-    if len(result):
-        await message.channel.send("That image is already in the picturebook!")
-        return
-    saved.table(str(message.guild.id)).insert({'server': message.guild.id, 'image': str(image),
-                                               'owner': message.author.id})
-    await message.channel.send("Image saved!")
-
-
-async def get_saved(message):
-    all_saved = saved.table(str(message.guild.id)).all()
-    if(len(all_saved)) == 0:
-        await message.channel.send("There are no saved images in this server! Use `;save` to save one.")
-        return
-    images = []
-    authors = []
-    for item in all_saved:
-        images.insert(0, item["image"])
-        authors.insert(0, item["owner"])
-    await imagesearch.create_viewer(message, images, len(images), "Picturebook", authors=authors)
-
-
-async def remove(message, owner_id):
-    current = imagesearch.get_current_image(message)
-    if current is None:
-        await message.channel.send("You don't have an image selected in the picturebook!")
-        return
-    result = saved.table(str(message.guild.id)).search(Query().image == current['images'][current['pg'] - 1])
-    if not result:  # if result is not found
-        await message.channel.send("Something has gone terribly wrong! Sorry!")
-    else:
-        if result[0]['owner'] == message.author.id or message.author.id == owner_id:
-            saved.table(str(message.guild.id)).remove(Query().image == current['images'][current['pg'] - 1])
-            await message.channel.send("Removed the current image!")
-        else:
-            await message.channel.send("You are not the creator of the current image!")
+            await ctx.send("You are not the creator of the current image!")

@@ -85,5 +85,10 @@ fabric.properties
 
 # Other stuff
 *pyc
-emoji.png 
 __pycache__/
+.pytest_cache/
+
+# Images the old version of the bot wrote to the working directory
+/*.png
+/*.gif
+/*.jpg

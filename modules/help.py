@@ -1,37 +1,41 @@
-import asyncio
+"""Help pages (`;help`, `;help <page>`, `;help <command>`)."""
 
 import discord
+from discord.ext import commands
 
-shucks = [
-    'https://rimgo.pussthecat.org/gacRkVx.png',
-    'https://rimgo.pussthecat.org/gacRkVx.png',
-    'https://rimgo.pussthecat.org/gacRkVx.png',
-    'https://rimgo.pussthecat.org/MJRUgWk.png',
-    'https://rimgo.pussthecat.org/UOdRaHR.png',
-    'https://rimgo.pussthecat.org/31jOGPf.png',
-    'https://rimgo.pussthecat.org/k7kTT2o.png',
-    'https://rimgo.pussthecat.org/JvbBhc2.png',
-    'https://rimgo.pussthecat.org/gWfuFB8.png',
-    'https://rimgo.pussthecat.org/Dfz2xpo.png',
-    'https://rimgo.pussthecat.org/EByj26t.png',
-    'https://rimgo.pussthecat.org/tZxutE8.png',
-    'https://rimgo.pussthecat.org/vkSksOv.png',
-    'https://rimgo.pussthecat.org/G5KGuus.png',
-    'https://rimgo.pussthecat.org/MtGmg3w.png',
-    'https://rimgo.pussthecat.org/wnSibNm.png',
-    'https://rimgo.pussthecat.org/cRDaS4i.png',
-    'https://rimgo.pussthecat.org/mh1gqPV.png',
-    'https://rimgo.pussthecat.org/0NgYWV7.png',
-    'https://rimgo.pussthecat.org/CaIMs7Y.png',
-    'https://rimgo.pussthecat.org/TQrwHx6.png',
-    'https://rimgo.pussthecat.org/AX4Fsqr.png',
-    'https://rimgo.pussthecat.org/inKNjPt.png',
-    'https://rimgo.pussthecat.org/Yqpugd4.png',
-    'https://rimgo.pussthecat.org/jJPTljI.png',
-    'https://rimgo.pussthecat.org/N5Cu6Wx.png'
+from modules.config import ASSETS_DIR
+
+# Footer icons for the help pages (gacRkVx appears 3x so it is picked more often).
+SHUCK_ICONS = [
+    'gacRkVx.png',
+    'gacRkVx.png',
+    'gacRkVx.png',
+    'MJRUgWk.png',
+    'UOdRaHR.png',
+    '31jOGPf.png',
+    'k7kTT2o.png',
+    'JvbBhc2.png',
+    'gWfuFB8.png',
+    'Dfz2xpo.png',
+    'EByj26t.png',
+    'tZxutE8.png',
+    'vkSksOv.png',
+    'G5KGuus.png',
+    'MtGmg3w.png',
+    'wnSibNm.png',
+    'cRDaS4i.png',
+    'mh1gqPV.png',
+    '0NgYWV7.png',
+    'CaIMs7Y.png',
+    'TQrwHx6.png',
+    'AX4Fsqr.png',
+    'inKNjPt.png',
+    'Yqpugd4.png',
+    'jJPTljI.png',
+    'N5Cu6Wx.png',
 ]
 
-commands = [
+HELP_ENTRIES = [
     # {'command': 'prefix <character>', 'info': "Changes the command prefix for the server", 'page': 1},
     {
         'prefix': ('emote', 'e'),
@@ -733,7 +737,7 @@ commands = [
     }
 ]
 
-titles = [
+TITLES = [
     "Shuckbot help",
     "General commands",
     "Image editor commands [A - M]",
@@ -744,76 +748,58 @@ titles = [
 ]
 
 
-async def show_help(message):
+
+MAX_PAGE = 6
+GAME_PAGE = 6
+
+
+def _find_command_help(name: str) -> dict | None:
+    found = None
+    for item in HELP_ENTRIES:
+        if name in item.get("prefix", ()):
+            found = item
+    return found
+
+
+def build_help(argument: str, icon_seed: int) -> tuple[discord.Embed, discord.File | None]:
+    """The embed for ``;help <argument>``, plus the footer icon file it references (if any)."""
+    embed = discord.Embed(colour=discord.Color.gold())
     page_num = 0
-    maxpage = 6
-    if len(message.content) != 5:
-        if message.content[6:].isdigit():
-            page_num = int(message.content[6:])
-            if page_num > maxpage:
-                page_num = maxpage
-            if page_num < 0:
-                page_num = 0
-        else:  # The user likely entered in a command
-            if message.content[6:] in ['g', 'game']:
-                page_num = 6
-            else:
-                command = str(message.content[6:])
-                is_invalid = True
-                for item in commands:
-                    try:
-                        for prefix in item['prefix']:
-                            if prefix == command:
-                                page_num = -1
-                                is_invalid = False
-                                help_txt = item['help']
-                                gen_pfx = item['prefix'][0]
-                    except KeyError:  # it got to the end without finding the command
-                        break
-                if is_invalid:
-                    page_num = 0
+    if argument.isdigit():
+        page_num = min(int(argument), MAX_PAGE)
+    elif argument in ("g", "game"):
+        page_num = GAME_PAGE
+    elif argument:
+        item = _find_command_help(argument)
+        if item is not None:
+            help_txt = item["help"]
+            embed.title = item["prefix"][0].capitalize() + " command help!"
+            embed.add_field(name="Description:", value=help_txt[0], inline=False)
+            for i in range(1, len(help_txt) - 1, 2):
+                embed.add_field(name=help_txt[i], value=help_txt[i + 1], inline=False)
+            return embed, None
 
-    embed = discord.Embed()
-    embed.colour = discord.Color.gold()
-    embed.type = "rich"
+    embed.title = TITLES[page_num]
+    for item in HELP_ENTRIES:
+        if item["page"] == page_num:
+            embed.add_field(name=item["command"], value=item["info"], inline=False)
+    icon = SHUCK_ICONS[icon_seed % len(SHUCK_ICONS)]
+    embed.set_footer(text="Page " + str(page_num) + "/" + str(MAX_PAGE) + "     type ;help <page number> "
+                                                                          "to see the other pages!",
+                     icon_url="attachment://shuck.png")
+    return embed, discord.File(ASSETS_DIR / "help" / icon, filename="shuck.png")
 
-    if page_num >= 0:
-        embed.title = titles[page_num]
-        for item in commands:
-            if item['page'] == page_num:
-                embed.add_field(name=item['command'], value=item['info'], inline=False)
-        embed.set_footer(text="Page " + str(page_num) + "/" + str(maxpage) + "     type ;help <page number> "
-                                                                             "to see the other pages!",
-                         icon_url=shucks[message.id % len(shucks)])
-    else:
-        embed.title = gen_pfx.capitalize() + " command help!"
-        embed.add_field(name="Description:", value=help_txt[0], inline=False)
-        for i in range(1, int(len(help_txt) - 1), 2):
-            embed.add_field(name=help_txt[i], value=help_txt[i + 1], inline=False)
-    # ('Searches Google Images for your picture\n',
-    #  'Navigate with:\n',
-    #  'n to go next\n'
-    #  'b to go back\n'
-    #  'p[X] to go to page [X] (ex. p1, p20, p50, etc.)\n'
-    #  's to close the window\n\n',
-    #  'Usage:\n',
-    #  ';i <google search>\n'
-    #  ';im <google search>\n'
-    #  ';img <google search>\n\n',
-    #  'Examples:\n',
-    #  ';i Shuckle\n'
-    #  ';im Space Cop\n'
-    #  ';img League of Legends')
-    msg = await message.channel.send(embed=embed)
-# reactL = await msg.add_reaction(":shuckL:706690260519747604")
-# reactR = await msg.add_reaction(":shuckR:706690259890733087")
-#
-# def check(reaction, user):
-# 	return user == message.author and (reaction.emoji == reactL or reaction.emoji == reactR)
-#
-# try:
-# 	reaction, user = await client.wait_for('reaction_add', timeout=10.0, check=check)
-# except asyncio.TimeoutError:
-# 	await message.channel.send('TIMEOUT')
-# else:
-# 	await message.channel.send('yes')
+
+class Help(commands.Cog):
+    def __init__(self, bot: commands.Bot) -> None:
+        self.bot = bot
+
+    @commands.command(aliases=["help"])
+    async def page(self, ctx: commands.Context) -> None:
+        parts = ctx.message.content.split(" ", 1)
+        argument = parts[1].strip() if len(parts) > 1 else ""
+        embed, icon = build_help(argument, ctx.message.id)
+        if icon is None:
+            await ctx.send(embed=embed)
+        else:
+            await ctx.send(embed=embed, file=icon)

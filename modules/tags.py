@@ -1,209 +1,238 @@
-from tinydb import TinyDB, Query
-import discord
+"""Global text tags that anyone can create, with per-server disabling."""
+from __future__ import annotations
+
 import random
 
-tagsDB = TinyDB('tags.json')
-disableDB = TinyDB('tags_disabled.json')
-alldisableDB = TinyDB('tags_servers_disabled.json')
+import discord
+from discord.ext import commands
+from tinydb import Query
+
+from modules.config import BASE_DIR, Config
+from modules.discord_utils import is_nsfw
+from modules.storage import open_db
+
+Tag = Query()
+Disabled = Query()
+
+FIELD_VALUE_LIMIT = 1024
+MAX_EMBED_FIELDS = 25
+# Names with special meaning for `tag disable/enable` rather than referring to a tag.
+DISABLE_ALL = "all"
+DISABLE_RANDOM = "random"
+
+MSG_ALL_DISABLED = ("Tags have been disabled in this server! An admin can re-enable them with"
+                    " the command `;t enable all`")
 
 
-async def syntax_error(message):
-    await message.channel.send("Syntax error\n```fix\ntag <tag>\ntag add <tag> <content>"
-                               "\ntag edit <tag> <content>\ntag remove <tag>\ntag owner <tag>```")
+def _can_moderate(author: discord.abc.User) -> bool:
+    perms = getattr(author, "guild_permissions", None)
+    return perms is not None and (perms.administrator or perms.manage_messages)
 
 
-async def add(message):
-    print(message.clean_content)
-    args = message.clean_content.split(' ', 3)
-    if len(args) < 4:
-        await message.channel.send("Syntax error\n`;tag add <tag> <content>`")
-    else:
-        result = tagsDB.search(Query().tag == args[2].lower())
-        if not result:
-            tagsDB.insert(
-                {'tag': args[2].lower(), 'content': args[3], 'owner': message.author.id})  # inserts as lower case
-            await message.channel.send("Added tag **" + args[2] + "**!")
-        else:
-            await message.channel.send("Tag **" + args[2] + "** already exists!")
+def _numbered_list_fields(names: list[str]) -> list[str]:
+    """Split "1. tag\\n2. tag..." into chunks that fit in embed fields."""
+    fields, current = [], ""
+    for i, name in enumerate(names, start=1):
+        line = f"{i}. {name}"[:FIELD_VALUE_LIMIT - 1] + "\n"
+        if len(current) + len(line) > FIELD_VALUE_LIMIT:
+            fields.append(current)
+            current = ""
+        current += line
+    if current:
+        fields.append(current)
+    return fields[:MAX_EMBED_FIELDS]
 
 
-async def remove(message, owner_id):
-    args = message.clean_content.split(' ', 3)
-    if len(args) < 3:
-        await message.channel.send("Syntax error\n`;tag remove <tag> (<content>)`")
-    else:
-        result = tagsDB.search(Query().tag == args[2].lower())
-        if not result:  # if result is not found
-            await message.channel.send("Tag **" + args[2] + "** not found!")
-        else:
-            if result[0]['owner'] == message.author.id or message.author.id == int(owner_id):  # the owner can delete tags
-                tagsDB.remove(Query().tag == args[2].lower())
-                await message.channel.send("Removed tag **" + args[2] + "**!")
-            else:
-                await message.channel.send("You are not the author of tag **" + args[2] + "**!")
+class Tags(commands.Cog):
+    def __init__(self, bot: commands.Bot, config: Config) -> None:
+        self.bot = bot
+        self.config = config
+        self.tags = open_db(BASE_DIR / "tags.json")
+        self.disabled = open_db(BASE_DIR / "tags_disabled.json")
+        self.all_disabled = open_db(BASE_DIR / "tags_servers_disabled.json")
 
+    def _find(self, name: str) -> dict | None:
+        return self.tags.get(Tag.tag == name.lower())
 
-async def edit(message, owner_id):
-    args = message.clean_content.split(' ', 3)
-    if len(args) < 3:
-        await message.channel.send("Syntax error\n`;tag edit <tag> (<content>)`")
-    else:
-        result = tagsDB.search(Query().tag == args[2].lower())
-        if not result:  # if result is not found
-            await message.channel.send("Tag **" + args[2] + "** not found!")
-        else:
-            if result[0]['owner'] == message.author.id or message.author.id == int(owner_id):
-                if len(message.clean_content.split(' ')) < 4:
-                    await message.channel.send("Syntax error\n`;tag edit <tag> <content>`")
-                else:
-                    tagsDB.update({'content': args[3]}, Query().tag == args[2].lower())
-                    await message.channel.send("Edited tag **" + args[2] + "**!")
-            else:
-                await message.channel.send("You are not the author of tag **" + args[2] + "**!")
+    def _may_edit(self, tag: dict, user_id: int) -> bool:
+        return tag["owner"] == user_id or self.config.is_owner(user_id)
 
+    def _is_disabled(self, guild_id: int, name: str) -> bool:
+        return self.disabled.contains((Disabled.tag_name == name) & (Disabled.server_number == guild_id))
 
-# returns integer owner id, 0 if not found
-def owner(message):
-    args = message.clean_content.split(' ', 3)
-    result = tagsDB.search(Query().tag == args[2].lower())
-    if not result:
-        return 0
-    else:
-        return result[0]['owner']
+    def _all_disabled(self, guild_id: int) -> bool:
+        return self.all_disabled.contains(Disabled.server_number == guild_id)
 
-
-async def owned(message):
-    results = None
-    if not message.mentions:
-        results = tagsDB.search(Query().owner == message.author.id)
-    else:
-        results = tagsDB.search(Query().owner == message.mentions[0].id)
-    if not results and not message.mentions:
-        await message.channel.send("You don't own any tags!")
-    elif not results:
-        await message.channel.send(message.mentions[0].display_name + " doesn't own any tags!")
-    else:
-        embed = discord.Embed()
-        embed.title = "Tag list"
-        embed.type = "rich"
-        embed.colour = discord.Color.gold()
-        to_send = ""
-        for i in range(len(results)):
-            to_send += str(i + 1) + ". " + results[i]['tag'][:1024] + "\n"
-        embed.add_field(name="Tags", value=to_send, inline=False)
-        embed.set_author(name=message.author.display_name, icon_url=message.author.display_avatar.url)
-        await message.channel.send(embed=embed)
-
-
-async def get(message):
-    args = message.clean_content.split(' ', 3)
-    result = tagsDB.search(Query().tag == args[1].lower())
-    if not result:
-        await message.channel.send(f"Tag **{args[1]}** not found!")
-    else:
-        server_number = message.guild.id
-        result_d = disableDB.search((Query().tag_name == args[1].lower()) & (Query().server_number == server_number))
-        if len(result_d) > 0:
-            await message.channel.send(f"Tag **{args[1]}** has been disabled in this server!")
+    @commands.command(aliases=["t"])
+    async def tag(self, ctx: commands.Context) -> None:
+        args = ctx.message.clean_content.split(" ", 3)
+        if len(args) < 2:
+            await self.syntax_error(ctx)
             return
-        result_a = alldisableDB.search(Query().server_number == server_number)
-        if len(result_a) > 0:
-            await message.channel.send(f"Tags have been disabled in this server! An admin can re-enable them with"
-                                       f" the command `;t enable all`")
+        handler = {
+            "add": self.add,
+            "remove": self.remove,
+            "delete": self.remove,
+            "edit": self.edit,
+            "owner": self.owner,
+            "list": self.owned,
+            "random": self.get_random,
+            "disable": self.disable,
+            "enable": self.enable,
+        }.get(args[1], self.get)
+        await handler(ctx, args)
+
+    async def syntax_error(self, ctx: commands.Context) -> None:
+        await ctx.send("Syntax error\n```fix\ntag <tag>\ntag add <tag> <content>"
+                       "\ntag edit <tag> <content>\ntag remove <tag>\ntag owner <tag>```")
+
+    async def add(self, ctx: commands.Context, args: list[str]) -> None:
+        if len(args) < 4:
+            await ctx.send("Syntax error\n`;tag add <tag> <content>`")
+        elif self._find(args[2]):
+            await ctx.send("Tag **" + args[2] + "** already exists!")
+        else:
+            self.tags.insert({"tag": args[2].lower(), "content": args[3], "owner": ctx.author.id})
+            await ctx.send("Added tag **" + args[2] + "**!")
+
+    async def remove(self, ctx: commands.Context, args: list[str]) -> None:
+        if len(args) < 3:
+            await ctx.send("Syntax error\n`;tag remove <tag> (<content>)`")
             return
-        await message.channel.send(result[0]['content'])
+        tag = self._find(args[2])
+        if tag is None:
+            await ctx.send("Tag **" + args[2] + "** not found!")
+        elif self._may_edit(tag, ctx.author.id):
+            self.tags.remove(Tag.tag == args[2].lower())
+            await ctx.send("Removed tag **" + args[2] + "**!")
+        else:
+            await ctx.send("You are not the author of tag **" + args[2] + "**!")
 
+    async def edit(self, ctx: commands.Context, args: list[str]) -> None:
+        if len(args) < 3:
+            await ctx.send("Syntax error\n`;tag edit <tag> (<content>)`")
+            return
+        tag = self._find(args[2])
+        if tag is None:
+            await ctx.send("Tag **" + args[2] + "** not found!")
+        elif not self._may_edit(tag, ctx.author.id):
+            await ctx.send("You are not the author of tag **" + args[2] + "**!")
+        elif len(args) < 4:
+            await ctx.send("Syntax error\n`;tag edit <tag> <content>`")
+        else:
+            self.tags.update({"content": args[3]}, Tag.tag == args[2].lower())
+            await ctx.send("Edited tag **" + args[2] + "**!")
 
-async def get_random(message):
-    if not message.channel.is_nsfw():
-        await message.channel.send("Sorry, you can only use this command in nsfw channels!")
-        return
-    server_number = message.guild.id
-    result_d = disableDB.search((Query().tag_name == 'random') & (Query().server_number == server_number))
-    if len(result_d) > 0:
-        await message.channel.send(f"The random tag has been disabled in this server! An admin can re enable this "
-                                   f"feature with `;t enable random`")
-        return
-    result_a = alldisableDB.search(Query().server_number == server_number)
-    if len(result_a) > 0:
-        await message.channel.send(f"Tags have been disabled in this server! An admin can re-enable them with"
-                                   f" the command `;t enable all`")
-        return
-    result = tagsDB.all()
-    length = len(result)
-    rand = random.randint(0, length - 1)
-    await message.channel.send(result[rand]['content'])
+    async def owner(self, ctx: commands.Context, args: list[str]) -> None:
+        if len(args) < 3:
+            await self.syntax_error(ctx)
+            return
+        tag = self._find(args[2])
+        if tag is None:
+            await ctx.send("Tag **" + args[2] + "** does not exist")
+            return
+        tag_owner = self.bot.get_user(tag["owner"]) or await self.bot.fetch_user(tag["owner"])
+        await ctx.send("Tag **" + args[2] + "** is owned by `" + str(tag_owner) + "`")
 
+    async def owned(self, ctx: commands.Context, args: list[str]) -> None:
+        mentions = ctx.message.mentions
+        target_id = mentions[0].id if mentions else ctx.author.id
+        results = self.tags.search(Tag.owner == target_id)
+        if not results and not mentions:
+            await ctx.send("You don't own any tags!")
+        elif not results:
+            await ctx.send(mentions[0].display_name + " doesn't own any tags!")
+        else:
+            embed = discord.Embed(title="Tag list", colour=discord.Color.gold())
+            for value in _numbered_list_fields([tag["tag"] for tag in results]):
+                embed.add_field(name="Tags", value=value, inline=False)
+            embed.set_author(name=ctx.author.display_name, icon_url=ctx.author.display_avatar.url)
+            await ctx.send(embed=embed)
 
-async def disable(message):
-    author = message.author
-    args = message.clean_content.split(' ', 3)
-    if len(args) < 3:
-        await message.channel.send("You need to add a tag to disable! If you wish to disable all tags, please write"
-                                   " `;t disable all`")
-        return
-    if author.guild_permissions.administrator or author.guild_permissions.manage_messages:
-        result = tagsDB.search(Query().tag == args[2].lower())
-        if not result:
-            await message.channel.send(f"Tag **{args[2]}** not found!")
-        else:  # do the disabling
-            tag_name = args[2].lower()
-            server_number = message.guild.id
-
-            if tag_name == 'all':  # disabled ALL tags in the server
-                res = alldisableDB.search(Query().server_number == server_number)
-                if len(res) > 0:
-                    await message.channel.send(f'Tags are already disabled, you can reenable tags with the command '
-                                               f'`;t enable all`!')
-                    return
-                alldisableDB.insert({'server_number': server_number})
-                await message.channel.send(f'Tags have been disabled serverwide, you can reenable tags with the '
-                                           f'command `;t enable all`!')
+    async def get(self, ctx: commands.Context, args: list[str]) -> None:
+        name = args[1]
+        tag = self._find(name)
+        if tag is None:
+            await ctx.send(f"Tag **{name}** not found!")
+            return
+        if ctx.guild is not None:
+            if self._is_disabled(ctx.guild.id, name.lower()):
+                await ctx.send(f"Tag **{name}** has been disabled in this server!")
                 return
-
-            res = disableDB.search((Query().tag_name == args[2].lower()) & (Query().server_number == server_number))
-            if len(res) > 0:
-                await message.channel.send(f'Tag **{tag_name}** is already disabled!')
+            if self._all_disabled(ctx.guild.id):
+                await ctx.send(MSG_ALL_DISABLED)
                 return
-            disableDB.insert({'tag_name': tag_name, 'server_number': server_number, 'disabled_by': author.id})
-            await message.channel.send(f'Tag **{tag_name}** has been disabled in the server!')
-    else:
-        await message.channel.send("Sorry bud, you don't have the manage message permission! "
-                                   "You can't disable tags in the server")
+        await ctx.send(tag["content"])
 
-
-async def enable(message):
-    author = message.author
-    args = message.clean_content.split(' ', 3)
-    if len(args) < 3:
-        await message.channel.send("You need to add a tag to enable! If you wish to re-enable tags server-wide use "
-                                   "the `;t enable all` command!")
-        return
-    if author.guild_permissions.administrator or author.guild_permissions.manage_messages:
-        result = tagsDB.search(Query().tag == args[2].lower())
-        if not result:
-            await message.channel.send(f"Tag **{args[2]}** not found!")
-        else:  # do the disabling
-            tag_name = args[2]
-            server_number = message.guild.id
-
-            if tag_name == 'all':  # enable ALL tags in the server
-                res = alldisableDB.search(Query().server_number == server_number)
-                if len(res) > 0:
-                    alldisableDB.remove(Query().server_number == server_number)
-                    await message.channel.send(f'Tags have been re-enabled!')
-                    return
-
-                await message.channel.send(f'Tags are already enabled!')
+    async def get_random(self, ctx: commands.Context, args: list[str]) -> None:
+        if not is_nsfw(ctx.channel):
+            await ctx.send("Sorry, you can only use this command in nsfw channels!")
+            return
+        if ctx.guild is not None:
+            if self._is_disabled(ctx.guild.id, DISABLE_RANDOM):
+                await ctx.send("The random tag has been disabled in this server! An admin can re enable this "
+                               "feature with `;t enable random`")
                 return
-
-            res = disableDB.search((Query().tag_name == args[2].lower()) & (Query().server_number == server_number))
-            if len(res) > 0:  # has been disabled here, re enable
-                await message.channel.send(f'Tag **{tag_name}** has been enabled!')
-                disableDB.remove((Query().tag_name == args[2].lower()) & (Query().server_number == server_number))
+            if self._all_disabled(ctx.guild.id):
+                await ctx.send(MSG_ALL_DISABLED)
                 return
-            # disableDB.insert({'tag_name': tag_name, 'server_number': server_number, 'disabled_by': author.id})
-            await message.channel.send(f'Tag **{tag_name}** is already enabled!')
-    else:
-        await message.channel.send("Sorry bud, you don't have the manage message permission! "
-                                   "You can't enable tags in the server")
+        all_tags = self.tags.all()
+        if all_tags:
+            await ctx.send(random.choice(all_tags)["content"])
+
+    async def disable(self, ctx: commands.Context, args: list[str]) -> None:
+        if len(args) < 3:
+            await ctx.send("You need to add a tag to disable! If you wish to disable all tags, please write"
+                           " `;t disable all`")
+            return
+        if ctx.guild is None or not _can_moderate(ctx.author):
+            await ctx.send("Sorry bud, you don't have the manage message permission! "
+                           "You can't disable tags in the server")
+            return
+        tag_name = args[2].lower()
+        if tag_name not in (DISABLE_ALL, DISABLE_RANDOM) and self._find(tag_name) is None:
+            await ctx.send(f"Tag **{args[2]}** not found!")
+            return
+        guild_id = ctx.guild.id
+        if tag_name == DISABLE_ALL:
+            if self._all_disabled(guild_id):
+                await ctx.send("Tags are already disabled, you can reenable tags with the command "
+                               "`;t enable all`!")
+            else:
+                self.all_disabled.insert({"server_number": guild_id})
+                await ctx.send("Tags have been disabled serverwide, you can reenable tags with the "
+                               "command `;t enable all`!")
+            return
+        if self._is_disabled(guild_id, tag_name):
+            await ctx.send(f"Tag **{tag_name}** is already disabled!")
+            return
+        self.disabled.insert({"tag_name": tag_name, "server_number": guild_id, "disabled_by": ctx.author.id})
+        await ctx.send(f"Tag **{tag_name}** has been disabled in the server!")
+
+    async def enable(self, ctx: commands.Context, args: list[str]) -> None:
+        if len(args) < 3:
+            await ctx.send("You need to add a tag to enable! If you wish to re-enable tags server-wide use "
+                           "the `;t enable all` command!")
+            return
+        if ctx.guild is None or not _can_moderate(ctx.author):
+            await ctx.send("Sorry bud, you don't have the manage message permission! "
+                           "You can't enable tags in the server")
+            return
+        tag_name = args[2]
+        lowered = tag_name.lower()
+        if lowered not in (DISABLE_ALL, DISABLE_RANDOM) and self._find(lowered) is None:
+            await ctx.send(f"Tag **{tag_name}** not found!")
+            return
+        guild_id = ctx.guild.id
+        if lowered == DISABLE_ALL:
+            if self._all_disabled(guild_id):
+                self.all_disabled.remove(Disabled.server_number == guild_id)
+                await ctx.send("Tags have been re-enabled!")
+            else:
+                await ctx.send("Tags are already enabled!")
+            return
+        if self._is_disabled(guild_id, lowered):
+            self.disabled.remove((Disabled.tag_name == lowered) & (Disabled.server_number == guild_id))
+            await ctx.send(f"Tag **{tag_name}** has been enabled!")
+        else:
+            await ctx.send(f"Tag **{tag_name}** is already enabled!")

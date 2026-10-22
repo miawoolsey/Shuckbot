@@ -39,3 +39,39 @@ There are many more commands for you to explore!
 Ask either `@_michaeL#9999` or `@billofbong#12021` for an invite to the bot!
 
 _this bot is in really rough development, so please feel free to submit pull requests or issues!_
+
+## Development
+
+### Running the bot
+1. Copy `keys.txt.template` to `keys.txt` and fill in your keys (`token` is the only required one).
+2. `docker compose up -d --build`, or locally: `pip install -r requirements.txt && python Shuckbot.py`
+   (the `;e` emoji command needs the system `libcairo2` library).
+
+### Tests
+```
+pip install -r requirements-dev.txt
+python -m pytest
+```
+The tests run fully offline: Discord objects and network calls are faked.
+
+### Layout
+| Path | What lives there |
+|------|------------------|
+| `Shuckbot.py` | Entry point: builds the bot, loads every cog, global error handling |
+| `modules/core.py` | `;prefix`, `;ping`, `;invite` and per-server prefix storage |
+| `modules/help.py` | Help page text and the `;help` command |
+| `modules/imagefun.py` | Image commands (Discord side); `modules/imaging.py` holds the pure PIL/numpy transforms |
+| `modules/image_input.py` | Finds the image a user meant (URL, mention, attachment, or recent chat history) |
+| `modules/imagesearch.py`, `modules/viewer.py` | `;img` / `;r34` and the `n`/`b`/`p<N>`/`s` paginated viewer (shared with `;pb`) |
+| `modules/picturebook.py`, `modules/tags.py` | Server picturebook and global tags |
+| `modules/games/` | `;game` colour, flag, geography and geoguesser games, plus stats/leaderboard |
+| `modules/avwx.py`, `modules/identify.py`, `modules/readycheck.py` | METAR/TAF, Google Vision, Dota ready check |
+| `modules/storage.py`, `modules/net.py` | Atomic JSON storage and the shared non-blocking HTTP client |
+| `assets/` | Meme templates and help icons, bundled so the bot doesn't depend on any image host |
+
+### Data files
+Runtime data is kept in JSON files that are not committed: `prefixes.json`, `tags.json`, `tags_disabled.json`,
+`tags_servers_disabled.json`, `picturebook.json` (TinyDB format) in the repository root, and `modules/scores.json`,
+`modules/prefectures.json`, `modules/geoguessing.json` in `modules/`. The bot loads these into memory at startup and
+writes changes back atomically, so **stop the bot before hand-editing them** or your edits may be overwritten.
+`prefectures.json`, `geoguessing.json` and `flags.json` are re-read automatically when they change.

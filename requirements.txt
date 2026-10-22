@@ -4,13 +4,9 @@ colormath==3.0.0
 discord.py==2.3.2
 geocoder==1.38.1
 geopy==2.4.1
-google_api_python_client==2.110.0
 numpy>=1.24.0
 Pillow==10.1.0
 protobuf==4.25.1
-Requests==2.31.0
-simplejson==3.19.2
 tinydb==4.8.0
-untangle==1.2.1
 google-cloud-vision
 grpcio
