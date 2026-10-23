@@ -12,7 +12,7 @@ from modules import net
 from modules.config import MODULES_DIR
 from modules.discord_utils import image_to_file, safe_delete
 from modules.games.stats import ScoreStore
-from modules.image_input import ImageDecodeError, decode_image
+from modules.image_input import ImageDecodeError, decode_image, run_image_job
 from modules.storage import ReloadingJsonFile
 
 log = logging.getLogger(__name__)
@@ -59,7 +59,7 @@ async def _load_flag(difficulty: int) -> tuple[dict, discord.File] | None:
     flag = pick_flag(difficulty)
     try:
         data = await net.get_bytes(flag["url"])
-        file = await asyncio.to_thread(lambda: image_to_file(decode_image(data), "flag.png"))
+        file = await run_image_job(lambda: image_to_file(decode_image(data), "flag.png"))
     except (net.FetchError, ImageDecodeError, OSError) as e:
         log.warning("Couldn't load flag %s: %s", flag["url"], e)
         return None

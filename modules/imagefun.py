@@ -1,7 +1,6 @@
 """Image editing, meme template, and emoji commands."""
 from __future__ import annotations
 
-import asyncio
 import logging
 import math
 import random
@@ -16,7 +15,7 @@ from modules import imaging, net
 from modules.config import ASSETS_DIR
 from modules.discord_utils import Progress, avatar_url, bytes_to_file, image_to_file
 from modules.image_input import (IMAGE_EXTENSIONS, MSG_BROKEN_IMAGE, ImageDecodeError, download_image,
-                                 message_image_urls, read_image)
+                                 message_image_urls, read_image, run_image_job)
 
 log = logging.getLogger(__name__)
 
@@ -61,7 +60,7 @@ class ImageFun(commands.Cog):
             if len(steps) > 1:
                 await progress.update(steps[1])
             try:
-                file = await asyncio.to_thread(_render, transform, img, filename, *args)
+                file = await run_image_job(_render, transform, img, filename, *args)
             except (ValueError, OSError, MemoryError):
                 log.exception("Failed to render %s", filename)
                 await progress.finish()
@@ -205,7 +204,7 @@ class ImageFun(commands.Cog):
             if swap_factor > max_factor:
                 swap_factor = max_factor
             await progress.update(SLOW_STEPS[2])
-            file = await asyncio.to_thread(_render, imaging.shuffle_pixels, img, "shuffled_pixels.png", swap_factor)
+            file = await run_image_job(_render, imaging.shuffle_pixels, img, "shuffled_pixels.png", swap_factor)
             await progress.update(SLOW_STEPS[4])
         await ctx.send("Shuffled the image by **" + str(swap_factor) + "** !")
         await ctx.send(file=file)
@@ -230,7 +229,7 @@ class ImageFun(commands.Cog):
                 factor = min_factor
                 await ctx.send("Changing the resize factor to **" + str(factor) + "**")
             await progress.update(STEPS[2])
-            file = await asyncio.to_thread(_render, imaging.resize, img, "resized_img.png", factor)
+            file = await run_image_job(_render, imaging.resize, img, "resized_img.png", factor)
         await ctx.send(file=file)
 
     @commands.command()
@@ -253,7 +252,7 @@ class ImageFun(commands.Cog):
             if (clamped_width, clamped_height) != (width, height):
                 text = "Resizing to (" + str(clamped_width) + ", " + str(clamped_height) + "), " + text
             await progress.update(text + ".")
-            file = await asyncio.to_thread(
+            file = await run_image_job(
                 lambda: image_to_file(imaging.noise(clamped_width, clamped_height), "noise.png"))
         await ctx.send(file=file)
 
@@ -313,7 +312,7 @@ class ImageFun(commands.Cog):
             await progress.update(STEPS[2])
             try:
                 img = await download_image(target)
-                file = await asyncio.to_thread(image_to_file, img, "undo.png")
+                file = await run_image_job(image_to_file, img, "undo.png")
             except (net.FetchError, ImageDecodeError, OSError):
                 await progress.finish()
                 await ctx.send(MSG_BROKEN_IMAGE)
@@ -358,7 +357,7 @@ class ImageFun(commands.Cog):
                 if scale > 0:
                     resize = imaging.scale_animation if animated else imaging.scale_image
                     try:
-                        data = await asyncio.to_thread(resize, data, scale)
+                        data = await run_image_job(resize, data, scale)
                     except (OSError, ValueError):
                         await ctx.send(MSG_BAD_EMOJI)
                         return
@@ -384,10 +383,10 @@ class ImageFun(commands.Cog):
             too_big_notice = await ctx.send("That scale's too big! Resizing to 20...")
             scale = default_scale
         try:
-            png = await asyncio.to_thread(imaging.render_svg, svg, scale)
+            png = await run_image_job(imaging.render_svg, svg, scale)
         except MemoryError:
             too_big_notice = too_big_notice or await ctx.send("That scale's too big! Resizing to 20...")
-            png = await asyncio.to_thread(imaging.render_svg, svg, default_scale)
+            png = await run_image_job(imaging.render_svg, svg, default_scale)
         except Exception:
             log.exception("Failed to render twemoji %s", url)
             await ctx.send(MSG_BAD_EMOJI)

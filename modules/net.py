@@ -7,6 +7,7 @@ aiohttp session.
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 from typing import Any
 
@@ -25,6 +26,29 @@ class FetchError(Exception):
         self.status = status
 
 
+def is_public_address(host: str) -> bool:
+    try:
+        return ipaddress.ip_address(host).is_global
+    except ValueError:
+        return False
+
+
+class PublicOnlyConnector(aiohttp.TCPConnector):
+    """Refuses to connect to loopback/private/link-local addresses.
+
+    Users can make the bot fetch arbitrary URLs, so without this they could probe services on
+    the host's LAN. Filtering resolved addresses covers hostnames, IP literals and every redirect
+    hop, and the checked address is the one actually connected to.
+    """
+
+    async def _resolve_host(self, host, port, traces=None):
+        resolved = await super()._resolve_host(host, port, traces=traces)
+        public = [entry for entry in resolved if is_public_address(entry["host"])]
+        if not public:
+            raise OSError(f"Refusing to connect to non-public address for {host!r}")
+        return public
+
+
 _session: aiohttp.ClientSession | None = None
 
 
@@ -32,6 +56,7 @@ async def start() -> None:
     global _session
     if _session is None or _session.closed:
         _session = aiohttp.ClientSession(
+            connector=PublicOnlyConnector(),
             timeout=aiohttp.ClientTimeout(total=DEFAULT_TIMEOUT),
             headers={"User-Agent": USER_AGENT},
         )

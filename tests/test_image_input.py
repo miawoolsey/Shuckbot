@@ -19,9 +19,11 @@ def test_explicit_url_wins():
 
 def test_mention_avatar_used():
     from types import SimpleNamespace
-    user = SimpleNamespace(avatar=None, default_avatar=SimpleNamespace(url="https://cdn/default.png"))
+    user = SimpleNamespace(avatar=None, default_avatar=SimpleNamespace(url="https://cdn/default.png"),
+                           display_avatar=SimpleNamespace(url="https://cdn/default.png"))
     msg = message(";holding @someone", mentions=[user])
     assert _collect(msg, image_input.EDIT_SOURCE) == [("direct", "https://cdn/default.png")]
+    assert _collect(msg, image_input.URL_SOURCE) == [("direct", "https://cdn/default.png")]
     assert _collect(msg, image_input.VISION_SOURCE) == []  # vision doesn't use avatars
 
 
@@ -84,3 +86,21 @@ def test_read_image_invalid_explicit_url(monkeypatch):
     msg = message(";kim https://x.com/a.png")
     assert asyncio.run(image_input.read_image(msg)) is None
     assert msg.channel.texts == [image_input.MSG_INVALID_IMAGE]
+
+
+def test_mention_uses_server_avatar_for_edits_and_global_for_picturebook():
+    from types import SimpleNamespace
+    user = SimpleNamespace(avatar=SimpleNamespace(url="https://cdn/global.png"),
+                           display_avatar=SimpleNamespace(url="https://cdn/server.png"))
+    msg = message(";holding @someone", mentions=[user])
+    assert _collect(msg, image_input.EDIT_SOURCE) == [("direct", "https://cdn/server.png")]
+    assert _collect(msg, image_input.URL_SOURCE) == [("direct", "https://cdn/global.png")]
+
+
+def test_decode_rejects_decompression_bombs():
+    import io
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("L", (8000, 7000)).save(buf, "PNG")  # 56M pixels, ~60 KB compressed
+    with pytest.raises(image_input.ImageDecodeError):
+        image_input.decode_image(buf.getvalue())

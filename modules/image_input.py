@@ -25,6 +25,13 @@ IMAGE_EXTENSIONS = re.compile(r"\.(png|jpe?g|gif|webp)", re.IGNORECASE)
 STATIC_IMAGE_EXTENSIONS = re.compile(r"\.(png|jpe?g|webp)", re.IGNORECASE)
 
 HISTORY_LIMIT = 20
+# Compressed downloads are capped in net.py; this caps the decoded size (a tiny PNG can decode
+# to gigabytes). 50M pixels is e.g. 8660x5770.
+MAX_IMAGE_PIXELS = 50_000_000
+# CPU-heavy image work runs in threads; bound how many run at once so a burst of commands
+# can't exhaust memory.
+MAX_CONCURRENT_IMAGE_JOBS = 3
+_image_jobs = asyncio.Semaphore(MAX_CONCURRENT_IMAGE_JOBS)
 
 MSG_URL_FORMAT = ("Your URL is not properly formatted! Currently I can only process URL's "
                   "that end in .png, .jpg, .gif, or .webp")
@@ -52,15 +59,18 @@ class ImageDecodeError(Exception):
 class ImageSource:
     pattern: re.Pattern
     allow_mentions: bool
+    # Mentioned users' server avatar (image edits) vs. their global avatar (picturebook).
+    server_avatar: bool
     # Stop searching history at the newest message with media, even if it's an unsupported type.
     stop_at_unsupported: bool
     not_found_with_args: str
     not_found_without_args: str
 
 
-EDIT_SOURCE = ImageSource(IMAGE_EXTENSIONS, True, False, MSG_URL_FORMAT, MSG_NOT_FOUND)
-URL_SOURCE = ImageSource(IMAGE_EXTENSIONS, True, False, MSG_URL_FORMAT, MSG_URL_FORMAT)
-VISION_SOURCE = ImageSource(STATIC_IMAGE_EXTENSIONS, False, True, MSG_STATIC_URL_FORMAT, MSG_STATIC_URL_FORMAT)
+EDIT_SOURCE = ImageSource(IMAGE_EXTENSIONS, True, True, False, MSG_URL_FORMAT, MSG_NOT_FOUND)
+URL_SOURCE = ImageSource(IMAGE_EXTENSIONS, True, False, False, MSG_URL_FORMAT, MSG_URL_FORMAT)
+VISION_SOURCE = ImageSource(STATIC_IMAGE_EXTENSIONS, False, False, True, MSG_STATIC_URL_FORMAT,
+                            MSG_STATIC_URL_FORMAT)
 
 
 def looks_like_image_url(word: str, pattern: re.Pattern = IMAGE_EXTENSIONS) -> bool:
@@ -101,7 +111,8 @@ async def _candidates(message: discord.Message, source: ImageSource) -> AsyncIte
             yield _EXPLICIT, args[1]
             return
         if source.allow_mentions and message.mentions:
-            yield _DIRECT, avatar_url(message.mentions[0])
+            user = message.mentions[0]
+            yield _DIRECT, user.display_avatar.url if source.server_avatar else avatar_url(user)
             return
     elif message.attachments:
         url = message.attachments[0].url
@@ -121,15 +132,23 @@ def _not_found(message: discord.Message, source: ImageSource) -> ImageInputError
 def decode_image(data: bytes) -> Image.Image:
     try:
         img = Image.open(io.BytesIO(data))
+        if img.width * img.height > MAX_IMAGE_PIXELS:
+            raise ImageDecodeError(f"image is too large ({img.width}x{img.height})")
         img.load()
         return img
     except (UnidentifiedImageError, Image.DecompressionBombError, OSError, ValueError) as e:
         raise ImageDecodeError(str(e)) from e
 
 
+async def run_image_job(func, *args):
+    """Run CPU-heavy image work in a worker thread, with bounded concurrency."""
+    async with _image_jobs:
+        return await asyncio.to_thread(func, *args)
+
+
 async def download_image(url: str) -> Image.Image:
     data = await net.get_bytes(url)
-    return await asyncio.to_thread(decode_image, data)
+    return await run_image_job(decode_image, data)
 
 
 async def read_image(message: discord.Message, source: ImageSource = EDIT_SOURCE) -> Image.Image | None:

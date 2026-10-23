@@ -23,7 +23,7 @@ def avatar_url(user: discord.abc.User) -> str:
 
 
 def image_to_file(img: Image.Image, filename: str, **save_kwargs) -> discord.File:
-    """Encode a PIL image in memory. Blocking: call via ``asyncio.to_thread`` for big images."""
+    """Encode a PIL image in memory. Blocking: run big images via ``image_input.run_image_job``."""
     buffer = io.BytesIO()
     img.save(buffer, format=save_kwargs.pop("format", None) or _format_for(filename), **save_kwargs)
     buffer.seek(0)

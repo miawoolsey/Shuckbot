@@ -20,7 +20,7 @@ from modules import net
 from modules.config import ASSETS_DIR, MODULES_DIR
 from modules.discord_utils import image_to_file
 from modules.games.stats import ScoreStore
-from modules.image_input import ImageDecodeError, decode_image
+from modules.image_input import ImageDecodeError, decode_image, run_image_job
 from modules.storage import ReloadingJsonFile
 
 log = logging.getLogger(__name__)
@@ -51,7 +51,7 @@ async def _prefecture_map(ctx: commands.Context, scores: ScoreStore, area: str, 
     name = region["name"][0]
     try:
         data = await net.get_bytes(region["map_url"])
-        file = await asyncio.to_thread(lambda: image_to_file(decode_image(data), "map.png"))
+        file = await run_image_job(lambda: image_to_file(decode_image(data), "map.png"))
     except (net.FetchError, ImageDecodeError, OSError) as e:
         log.warning("Couldn't load map for %s: %s", name, e)
         await ctx.send("Something broke! Please try the command again")
@@ -146,7 +146,7 @@ def _stitch_maps(images: list[bytes]) -> Image.Image:
 async def three_zoom_map(map_url: str, filename: str) -> discord.File:
     """Street, regional and world zoom levels of the same map, side by side."""
     images = await asyncio.gather(*(net.get_bytes(with_zoom(map_url, zoom)) for zoom in MAP_ZOOMS))
-    return await asyncio.to_thread(lambda: image_to_file(_stitch_maps(list(images)), filename))
+    return await run_image_job(lambda: image_to_file(_stitch_maps(list(images)), filename))
 
 
 async def _location_image(url: str) -> bytes:
@@ -166,7 +166,7 @@ async def geoguesser_game(ctx: commands.Context, scores: ScoreStore, key: str | 
 
     try:
         data = await _location_image(location["url"])
-        intro_file = await asyncio.to_thread(lambda: image_to_file(decode_image(data), "location.png"))
+        intro_file = await run_image_job(lambda: image_to_file(decode_image(data), "location.png"))
     except (net.FetchError, ImageDecodeError, OSError) as e:
         log.warning("Couldn't load geoguesser location %s: %s", location["url"], e)
         await ctx.send("Something broke! Please try the command again")

@@ -10,7 +10,7 @@ from PIL import Image, ImageDraw
 
 from modules.config import Config
 from modules.discord_utils import Progress, image_to_file
-from modules.image_input import VISION_SOURCE, ImageDecodeError, download_image, find_image_url
+from modules.image_input import VISION_SOURCE, ImageDecodeError, download_image, find_image_url, run_image_job
 from modules.net import FetchError
 
 log = logging.getLogger(__name__)
@@ -101,6 +101,6 @@ class Identify(commands.Cog):
             except (FetchError, ImageDecodeError):
                 await progress.resolve(answer)
                 return
-            file = await asyncio.to_thread(lambda: image_to_file(draw_landmarks(img, landmarks), "landmark.png"))
+            file = await run_image_job(lambda: image_to_file(draw_landmarks(img, landmarks), "landmark.png"))
             await progress.finish()
             await ctx.send(content=answer, file=file)

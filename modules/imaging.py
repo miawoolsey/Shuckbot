@@ -1,6 +1,6 @@
 """Pure image transformations used by the image commands.
 
-Everything here is synchronous and CPU-bound; callers run it via ``asyncio.to_thread``
+Everything here is synchronous and CPU-bound; callers run it via ``image_input.run_image_job``
 so the bot stays responsive while images are processed.
 """
 from __future__ import annotations
